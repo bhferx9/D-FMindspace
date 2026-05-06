@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Plataforma Educativa</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<!-- Google Font -->
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+/* ===== VARIABLES ===== */
+:root{
+  --primary:#1ee3cf;
+  --secondary:#ffb703;
+  --accent:#8ecae6;
+  --dark:#023047;
+  --bg:#eafcff;
+}
+
+/* ===== GENERAL ===== */
+*{
+  box-sizing:border-box;
+}
+body{
+  margin:0;
+  font-family:'Fredoka', sans-serif;
+  background:var(--bg);
+  color:var(--dark);
+}
+
+/* ===== NAVBAR ===== */
+.navbar{
+  background:var(--primary);
+  padding:15px 25px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+.logo{
+  font-size:1.6rem;
+  font-weight:600;
+}
+.user{
+  background:rgba(255,255,255,.4);
+  padding:8px 16px;
+  border-radius:20px;
+}
+
+/* ===== LAYOUT ===== */
+.container{
+  padding:30px;
+}
+
+/* ===== MASCOTA ===== */
+.mascot{
+  text-align:center;
+  margin-bottom:30px;
+  animation:bounce 2s infinite;
+}
+.mascot span{
+  font-size:4rem;
+}
+.mascot p{
+  margin:10px 0 0;
+  font-size:1.2rem;
+}
+
+/* ===== CURSOS ===== */
+.courses{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+  gap:25px;
+}
+
+.course{
+  background:white;
+  border-radius:25px;
+  padding:25px;
+  text-align:center;
+  box-shadow:0 15px 30px rgba(0,0,0,.1);
+  cursor:pointer;
+  transition:.3s;
+  position:relative;
+}
+.course:hover{
+  transform:translateY(-10px);
+}
+.course-icon{
+  font-size:3.5rem;
+}
+.course h3{
+  margin:15px 0 10px;
+}
+.progress{
+  background:#e0f4f4;
+  height:14px;
+  border-radius:10px;
+  overflow:hidden;
+}
+.progress span{
+  display:block;
+  height:100%;
+  background:linear-gradient(90deg,var(--secondary),var(--primary));
+  animation:load 1.5s ease;
+}
+
+/* ===== MAPA ===== */
+.map{
+  display:none;
+  margin-top:40px;
+}
+.path{
+  display:flex;
+  justify-content:space-around;
+  align-items:center;
+}
+.level{
+  width:70px;
+  height:70px;
+  border-radius:50%;
+  background:white;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  font-size:1.5rem;
+  box-shadow:0 10px 20px rgba(0,0,0,.15);
+  transition:.3s;
+}
+.level.active{
+  background:var(--secondary);
+}
+.level.completed{
+  background:#90db7a;
+}
+.level:hover{
+  transform:scale(1.15);
+}
+
+/* ===== ANIMATIONS ===== */
+@keyframes bounce{
+  0%,100%{transform:translateY(0);}
+  50%{transform:translateY(-10px);}
+}
+@keyframes load{
+  from{width:0;}
+}
+</style>
+</head>
+
+<body>
+
+<!-- NAVBAR -->
+<div class="navbar">
+  <div class="logo">📘 Aprende+</div>
+  <div class="user">👋 Hola, Alumno</div>
+</div>
+
+<div class="container">
+
+  <!-- MASCOTA -->
+  <div class="mascot">
+    <span>🦉</span>
+    <p>¡Elige una materia para continuar!</p>
+  </div>
+
+  <!-- CURSOS -->
+  <div class="courses">
+    <div class="course" onclick="openMap('mate')">
+      <div class="course-icon">🧮</div>
+      <h3>Matemáticas</h3>
+      <div class="progress">
+        <span style="width:70%"></span>
+      </div>
+    </div>
+
+    <div class="course" onclick="openMap('lectura')">
+      <div class="course-icon">📖</div>
+      <h3>Lectura</h3>
+      <div class="progress">
+        <span style="width:45%"></span>
+      </div>
+    </div>
+
+    <div class="course" onclick="openMap('ciencia')">
+      <div class="course-icon">🔬</div>
+      <h3>Ciencias</h3>
+      <div class="progress">
+        <span style="width:30%"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAPA DE LECCIONES -->
+  <div class="map" id="map">
+    <h2>📍 Mapa de Lecciones</h2>
+    <div class="path">
+      <div class="level completed">⭐</div>
+      <div class="level completed">⭐</div>
+      <div class="level active">▶</div>
+      <div class="level">🔒</div>
+      <div class="level">🔒</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function openMap(course){
+  document.getElementById("map").style.display="block";
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - D&F Mindspace</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/pediatric.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <img src="images/logo.png" alt="Logo" class="sidebar-logo">
+            <h2>D&F Mindspace</h2>
+        </div>
+        
+        <div class="user-profile">
+            <img src="images/avatar-default.png" alt="Usuario" class="user-avatar">
+            <div class="user-info">
+                <h3 id="userName">Juan Pérez</h3>
+                <span class="user-role" id="userRole">Alumno</span>
+            </div>
+        </div>
+        
+        <nav class="sidebar-nav">
+            <ul>
+                <li class="active">
+                    <a href="dashboard.html">
+                        <i class="fas fa-home"></i> Inicio
+                    </a>
+                </li>
+                <li>
+                    <a href="student/courses.html">
+                        <i class="fas fa-book"></i> Mis Cursos
+                    </a>
+                </li>
+                <li>
+                    <a href="student/activities.html">
+                        <i class="fas fa-tasks"></i> Actividades
+                    </a>
+                </li>
+                <li>
+                    <a href="student/progress.html">
+                        <i class="fas fa-chart-line"></i> Mi Progreso
+                    </a>
+                </li>
+                <li>
+                    <a href="#">
+                        <i class="fas fa-calendar"></i> Calendario
+                    </a>
+                </li>
+                <li>
+                    <a href="#">
+                        <i class="fas fa-comments"></i> Mensajes
+                    </a>
+                </li>
+                <li>
+                    <a href="#">
+                        <i class="fas fa-cog"></i> Configuración
+                    </a>
+                </li>
+            </ul>
+        </nav>
+        
+        <div class="sidebar-footer">
+            <a href="#" id="logoutBtn">
+                <i class="fas fa-sign-out-alt"></i> Cerrar Sesión
+            </a>
+        </div>
+    </div>
+    
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Top Bar -->
+        <header class="top-bar">
+            <div class="search-box">
+                <i class="fas fa-search"></i>
+                <input type="text" placeholder="Buscar cursos, actividades...">
+            </div>
+            <div class="top-bar-actions">
+                <button class="btn-notification">
+                    <i class="fas fa-bell"></i>
+                    <span class="notification-badge">3</span>
+                </button>
+                <button class="btn-help">
+                    <i class="fas fa-question-circle"></i> Ayuda
+                </button>
+            </div>
+        </header>
+        
+        <!-- Dashboard Content -->
+        <main class="dashboard-content">
+            <!-- Welcome Section -->
+            <section class="welcome-section">
+                <h1>¡Hola, <span id="welcomeName">Juan</span>!</h1>
+                <p>¿Listo para aprender hoy?</p>
+                <div class="daily-challenge">
+                    <h3><i class="fas fa-trophy"></i> Reto del día</h3>
+                    <p>Completa 3 actividades para ganar una medalla</p>
+                    <div class="challenge-progress">
+                        <div class="progress-bar" style="width: 33%"></div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Stats Cards -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon" style="background-color: #FF9AA2;">
+                        <i class="fas fa-book-open"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3>Cursos Activos</h3>
+                        <p class="stat-number" id="activeCourses">3</p>
+                    </div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon" style="background-color: #FFB7B2;">
+                        <i class="fas fa-tasks"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3>Actividades Pendientes</h3>
+                        <p class="stat-number" id="pendingActivities">5</p>
+                    </div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon" style="background-color: #FFDAC1;">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3>Progreso Total</h3>
+                        <p class="stat-number" id="totalProgress">65%</p>
+                    </div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon" style="background-color: #E2F0CB;">
+                        <i class="fas fa-star"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3>Puntos Acumulados</h3>
+                        <p class="stat-number" id="totalPoints">1,250</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Recent Courses -->
+            <section class="recent-courses">
+                <h2>Mis Cursos Recientes</h2>
+                <div class="courses-grid">
+                    <div class="course-card-dashboard">
+                        <div class="course-header">
+                            <span class="course-category">Atención</span>
+                            <span class="course-progress">40%</span>
+                        </div>
+                        <h3>Memoria y Concentración</h3>
+                        <p>Ejercicios para mejorar la atención sostenida</p>
+                        <div class="course-footer">
+                            <div class="course-stats">
+                                <span><i class="fas fa-play-circle"></i> 8 lecciones</span>
+                                <span><i class="fas fa-clock"></i> 2h 30m</span>
+                            </div>
+                            <a href="student/courses.html" class="btn-continue">Continuar</a>
+                        </div>
+                    </div>
+                    
+                    <div class="course-card-dashboard">
+                        <div class="course-header">
+                            <span class="course-category">Creatividad</span>
+                            <span class="course-progress">75%</span>
+                        </div>
+                        <h3>Pensamiento Creativo</h3>
+                        <p>Desarrolla ideas innovadoras y soluciones</p>
+                        <div class="course-footer">
+                            <div class="course-stats">
+                                <span><i class="fas fa-play-circle"></i> 12 lecciones</span>
+                                <span><i class="fas fa-clock"></i> 4h 15m</span>
+                            </div>
+                            <a href="student/courses.html" class="btn-continue">Continuar</a>
+                        </div>
+                    </div>
+                    
+                    <div class="course-card-dashboard">
+                        <div class="course-header">
+                            <span class="course-category">Emociones</span>
+                            <span class="course-progress">20%</span>
+                        </div>
+                        <h3>Inteligencia Emocional</h3>
+                        <p>Reconoce y maneja tus emociones</p>
+                        <div class="course-footer">
+                            <div class="course-stats">
+                                <span><i class="fas fa-play-circle"></i> 10 lecciones</span>
+                                <span><i class="fas fa-clock"></i> 3h 45m</span>
+                            </div>
+                            <a href="student/courses.html" class="btn-continue">Continuar</a>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Upcoming Activities -->
+            <section class="upcoming-activities">
+                <h2>Próximas Actividades</h2>
+                <div class="activities-list">
+                    <div class="activity-item">
+                        <div class="activity-icon">
+                            <i class="fas fa-puzzle-piece"></i>
+                        </div>
+                        <div class="activity-info">
+                            <h4>Rompecabezas de atención</h4>
+                            <p>Curso: Memoria y Concentración</p>
+                            <span class="activity-deadline">
+                                <i class="fas fa-clock"></i> Vence en 2 días
+                            </span>
+                        </div>
+                        <button class="btn-start">Comenzar</button>
+                    </div>
+                    
+                    <div class="activity-item">
+                        <div class="activity-icon">
+                            <i class="fas fa-paint-brush"></i>
+                        </div>
+                        <div class="activity-info">
+                            <h4>Dibujo creativo</h4>
+                            <p>Curso: Pensamiento Creativo</p>
+                            <span class="activity-deadline">
+                                <i class="fas fa-clock"></i> Vence en 3 días
+                            </span>
+                        </div>
+                        <button class="btn-start">Comenzar</button>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="js/auth.js"></script>
+    <script src="js/dashboard.js"></script>
+</body>
+</html>
