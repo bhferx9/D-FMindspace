@@ -1,5 +1,5 @@
 <?php
-include 'php/config.php';
+include_once 'php/config.php';
 session_start();
 
 // Verificar si el usuario es alumno
@@ -33,7 +33,7 @@ $res_actividades = mysqli_query($conn, $query_actividades);
 
 // CORREGIDO: Verificar si la tabla alumnos existe, sino usar tabla usuarios
 // Primero verificamos si existe la tabla alumnos
-$check_table = mysqli_query($conn, "SHOW TABLES LIKE 'alumnos'");
+
 $puntos_alumno = 0;
 
 // if(mysqli_num_rows($check_table) > 0) {
@@ -62,18 +62,17 @@ $avatares = [
 ];
 
 // CORREGIDO: Verificar si la tabla alumnos tiene columna avatar
-$check_avatar_col = mysqli_query($conn, "SHOW COLUMNS FROM usuarios LIKE 'avatar'");
+
 $avatar_key = 'panda'; // default
 
-if(mysqli_num_rows($check_avatar_col) > 0) {
-    // La columna avatar existe en usuarios
-    $query_avatar = "SELECT avatar FROM usuarios WHERE id = '$alumno_id'";
-    $res_avatar = mysqli_query($conn, $query_avatar);
-    if($res_avatar && mysqli_num_rows($res_avatar) > 0) {
-        $avatar_data = mysqli_fetch_assoc($res_avatar);
-        $avatar_key = $avatar_data['avatar'] ?: 'panda';
+
+$query_avatar = $query_avatar = "SELECT COALESCE(avatar, 'panda') as avatar FROM usuarios WHERE id = '$alumno_id'";
+$res_avatar = mysqli_query($conn, $query_avatar);
+if($res_avatar && mysqli_num_rows($res_avatar) > 0) {
+    $avatar_data = mysqli_fetch_assoc($res_avatar);
+    $avatar_key = $avatar_data['avatar'];  // Ya tiene 'panda' como default por COALESCE
     }
-}
+
 
 // Asegurarse de que el avatar exista en el array
 if(!isset($avatares[$avatar_key])) {
