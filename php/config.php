@@ -8,11 +8,11 @@ if (defined('CONFIG_POSTGRES_CARGADO')) {
 }
 define('CONFIG_POSTGRES_CARGADO', true);
 
-$host = '192.168.0.17';
+$host = '';
 $port = '5432';
-$dbname = 'df_mindspace';
-$user = 'admin_user';
-$password = 'admin123';
+$dbname = '';
+$user = '';
+$password = '';
 
 try {
     $pdo = new PDO("pgsql:host=$host;port=$port;dbname=$dbname", $user, $password);
