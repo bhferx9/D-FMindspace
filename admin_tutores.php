@@ -119,7 +119,7 @@ if (!empty($busqueda)) {
     $where[] = "(nombre LIKE '%$busqueda%' OR email LIKE '%$busqueda%')";
 }
 if ($estado_filtro !== '') {
-    $where[] = "activo = " . intval($estado_filtro);
+    $where[] = "activo = " . ($estado_filtro ? 'TRUE' : 'FALSE');
 }
 $where_sql = 'WHERE ' . implode(' AND ', $where);
 
@@ -139,7 +139,7 @@ $query_tutores = "
     FROM usuarios 
     $where_sql 
     ORDER BY nombre ASC 
-    LIMIT $offset, $por_pagina
+    LIMIT $por_pagina OFFSET $offset
 ";
 $res_tutores = mysqli_query($conn, $query_tutores);
 $tutores = [];
@@ -150,7 +150,7 @@ while ($t = mysqli_fetch_assoc($res_tutores)) {
 // Obtener lista de cursos disponibles para asignación
 $cursos_disponibles = mysqli_query($conn, "
     SELECT id, nombre FROM cursos 
-    WHERE activo = 1 
+    WHERE activo = TRUE 
     ORDER BY nombre
 ");
 

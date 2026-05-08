@@ -146,9 +146,9 @@ $sql = $sql_base . " ORDER BY c.nombre, a.fecha_limite ASC";
 
 $res = mysqli_query($conn, $sql);
 
-// Obtener estadísticas por curso
+// Obtener estadísticas por curso - CORREGIDO PARA POSTGRESQL
 $sql_stats = "SELECT c.id, c.nombre, COUNT(a.id) as total_actividades,
-              SUM(CASE WHEN a.fecha_limite < CURDATE() THEN 1 ELSE 0 END) as vencidas
+              SUM(CASE WHEN a.fecha_limite < CURRENT_DATE THEN 1 ELSE 0 END) as vencidas
               FROM cursos c
               LEFT JOIN actividades a ON c.id = a.id_curso
               WHERE c.id_tutor = '$tutor_id'
@@ -178,8 +178,8 @@ function getDificultadColor($dificultad) {
     return $colores[$dificultad] ?? 'secondary';
 }
 
-// Obtener actividades agrupadas por curso para el filtro
-$sql_grouped = "SELECT c.id, c.nombre, GROUP_CONCAT(a.id) as actividades_ids
+// Obtener actividades agrupadas por curso para el filtro 
+$sql_grouped = "SELECT c.id, c.nombre, STRING_AGG(a.id::text, ',') as actividades_ids
                 FROM cursos c
                 LEFT JOIN actividades a ON c.id = a.id_curso
                 WHERE c.id_tutor = '$tutor_id'

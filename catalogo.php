@@ -40,13 +40,12 @@ $query_actividades = "SELECT a.titulo, e.fecha_entrega, e.estado, ev.calificacio
                       ORDER BY e.fecha_entrega DESC LIMIT 4";
 $res_actividades = mysqli_query($conn, $query_actividades);
 
-// CORREGIDO: Verificar si la tabla alumnos existe, sino usar tabla usuarios
-// Primero verificamos si existe la tabla alumnos
-$check_table = mysqli_query($conn, "SHOW TABLES LIKE 'alumnos'");
+// =============================================
+// CORREGIDO PARA POSTGRESQL - Puntos y Avatar
+// =============================================
 $puntos_alumno = 0;
 
-
-// Obtener avatar del alumno (mismo sistema que en el dashboard)
+// Obtener avatar del alumno sin usar SHOW COLUMNS
 $avatares = [
     'panda' => ['emoji' => '🐼', 'color' => '#3A506B', 'nivel' => 1],
     'dragon' => ['emoji' => '🐉', 'color' => '#FF6B6B', 'nivel' => 1],
@@ -58,17 +57,14 @@ $avatares = [
     'mago' => ['emoji' => '🧙‍♂️', 'color' => '#00C2A8', 'nivel' => 6]
 ];
 
-// Determinar avatar del alumno
-$check_avatar_col = mysqli_query($conn, "SHOW COLUMNS FROM usuarios LIKE 'avatar'");
-$avatar_key = 'panda';
-
-if(mysqli_num_rows($check_avatar_col) > 0) {
-    $query_avatar = "SELECT avatar FROM usuarios WHERE id = '$alumno_id'";
-    $res_avatar = mysqli_query($conn, $query_avatar);
-    if($res_avatar && mysqli_num_rows($res_avatar) > 0) {
-        $avatar_data = mysqli_fetch_assoc($res_avatar);
-        $avatar_key = $avatar_data['avatar'] ?: 'panda';
-    }
+// Consulta directa del avatar (usando COALESCE para valor por defecto)
+$query_avatar = "SELECT COALESCE(avatar, 'panda') as avatar FROM usuarios WHERE id = '$alumno_id'";
+$res_avatar = mysqli_query($conn, $query_avatar);
+if($res_avatar && mysqli_num_rows($res_avatar) > 0) {
+    $avatar_data = mysqli_fetch_assoc($res_avatar);
+    $avatar_key = $avatar_data['avatar'];
+} else {
+    $avatar_key = 'panda';
 }
 
 if(!isset($avatares[$avatar_key])) {

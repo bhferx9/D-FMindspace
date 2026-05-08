@@ -8,21 +8,23 @@ if (!isset($_SESSION['user_id']) || $_SESSION['tipo'] != 'padre') {
     exit();
 }
 
-$id_padre = $_SESSION['user_id'];
+$id_padre = (int)$_SESSION['user_id'];
 
-// Obtener datos del padre desde la base de datos
-$query_padre = "SELECT nombre FROM usuarios WHERE id = ? AND tipo = 'padre'";
-$stmt_padre = $conn->prepare($query_padre);
-$stmt_padre->bind_param("i", $id_padre);
-$stmt_padre->execute();
-$result_padre = $stmt_padre->get_result();
-if ($row_padre = $result_padre->fetch_assoc()) {
-    $nombre_padre = $row_padre['nombre'];
-} else {
-    // Si no se encuentra (raro), usar un fallback
+// Obtener datos del padre desde la base de datos (PDO)
+try {
+    $query_padre = "SELECT nombre FROM usuarios WHERE id = :id AND tipo = 'padre'";
+    $stmt_padre = $conn->pdo->prepare($query_padre);
+    $stmt_padre->execute([':id' => $id_padre]);
+    $row_padre = $stmt_padre->fetch(PDO::FETCH_ASSOC);
+    
+    if ($row_padre) {
+        $nombre_padre = $row_padre['nombre'];
+    } else {
+        $nombre_padre = 'Padre';
+    }
+} catch(PDOException $e) {
     $nombre_padre = 'Padre';
 }
-$stmt_padre->close();
 
 // Iniciales para avatar
 $iniciales = '';
@@ -537,11 +539,6 @@ $facturas_json = json_encode($facturas);
         <div class="nav-item">
             <a href="dashboard_padre.php" class="nav-link">
                 <div class="icon"><i class="fas fa-users"></i></div><span>Mis hijos</span>
-            </a>
-        </div>
-        <div class="nav-item">
-            <a href="dashboard_padre_detalle.php" class="nav-link">
-                <div class="icon"><i class="fas fa-chart-line"></i></div><span>Visión general</span>
             </a>
         </div>
         <div class="nav-item">

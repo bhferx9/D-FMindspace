@@ -10,19 +10,22 @@ if (!isset($_SESSION['user_id']) || $_SESSION['tipo'] != 'padre') {
 
 $id_padre = $_SESSION['user_id'];
 
-// Obtener datos del padre desde la base de datos
-$query_padre = "SELECT nombre FROM usuarios WHERE id = ? AND tipo = 'padre'";
-$stmt_padre = $conn->prepare($query_padre);
-$stmt_padre->bind_param("i", $id_padre);
-$stmt_padre->execute();
-$result_padre = $stmt_padre->get_result();
-if ($row_padre = $result_padre->fetch_assoc()) {
-    $nombre_padre = $row_padre['nombre'];
-} else {
-    // Si no se encuentra (raro), usar un fallback
+// Obtener datos del padre desde la base de datos (usando PDO directamente)
+try {
+    $query_padre = "SELECT nombre FROM usuarios WHERE id = ? AND tipo = 'padre'";
+    $stmt_padre = $conn->pdo->prepare($query_padre);
+    $stmt_padre->execute([$id_padre]);
+    $result_padre = $stmt_padre->fetch(PDO::FETCH_ASSOC);
+
+    if ($result_padre) {
+        $nombre_padre = $result_padre['nombre'];
+    } else {
+        // Si no se encuentra (raro), usar un fallback
+        $nombre_padre = 'Padre';
+    }
+} catch(PDOException $e) {
     $nombre_padre = 'Padre';
 }
-$stmt_padre->close();
 
 // Iniciales para avatar
 $iniciales = '';
@@ -33,28 +36,36 @@ if (count($partes) >= 2) {
     $iniciales = strtoupper(substr($nombre_padre, 0, 2));
 }
 
-// Obtener hijos vinculados (usa la nueva tabla 'vinculaciones')
-$query_hijos = "
-    SELECT 
-        u.id,
-        u.nombre,
-        u.avatar,
-        TIMESTAMPDIFF(YEAR, u.fecha_nacimiento, CURDATE()) AS edad,
-        (SELECT COUNT(*) FROM inscripciones WHERE id_alumno = u.id AND estado = 'activo') AS cursos_activos,
-        (SELECT SUM(actividades_completadas) FROM progreso WHERE id_alumno = u.id) AS completadas,
-        (SELECT COUNT(*) FROM entregas WHERE id_alumno = u.id) AS total_entregas,
-        (SELECT AVG(porcentaje) FROM progreso WHERE id_alumno = u.id) AS progreso_promedio
-    FROM vinculaciones v
-    JOIN usuarios u ON v.id_alumno = u.id
-    WHERE v.id_padre = ? AND v.estado = 'activo' AND u.activo = 1
-    ORDER BY u.nombre
-";
+// Obtener hijos vinculados - CORREGIDO PARA POSTGRESQL
+// Obtener hijos vinculados - CORREGIDO PARA POSTGRESQL
+try {
+    $query_hijos = "
+        SELECT 
+            u.id,
+            u.nombre,
+            u.avatar,
+            EXTRACT(YEAR FROM age(CURRENT_DATE, u.fecha_nacimiento)) as edad,
+            (SELECT COUNT(*) FROM inscripciones WHERE id_alumno = u.id AND estado = 'activo') AS cursos_activos,
+            (SELECT COALESCE(SUM(actividades_completadas), 0) FROM progreso WHERE id_alumno = u.id) AS completadas,
+            (SELECT COUNT(*) FROM entregas WHERE id_alumno = u.id) AS total_entregas,
+            (SELECT COALESCE(AVG(porcentaje), 0) FROM progreso WHERE id_alumno = u.id) AS progreso_promedio
+        FROM vinculaciones v
+        JOIN usuarios u ON v.id_alumno = u.id
+        WHERE v.id_padre = ? AND v.estado = 'activo' AND u.activo = TRUE
+        ORDER BY u.nombre
+    ";
 
-$stmt = $conn->prepare($query_hijos);
-$stmt->bind_param("i", $id_padre);
-$stmt->execute();
-$hijos = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$stmt->close();
+    $stmt = $conn->pdo->prepare($query_hijos);
+    $stmt->execute([$id_padre]);
+    $hijos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Depuración
+    echo "<!-- DEBUG: Número de hijos encontrados en consulta principal: " . count($hijos) . " -->";
+    
+} catch(PDOException $e) {
+    $hijos = [];
+    echo "<!-- DEBUG Error en consulta principal: " . $e->getMessage() . " -->";
+}
 
 $total_hijos = count($hijos);
 
@@ -64,6 +75,27 @@ function getAvatarEmoji($avatar) {
         'buho' => '🦉', 'zorro' => '🦊', 'gato' => '🐱'
     ];
     return $emojis[$avatar] ?? '🧒';
+}
+
+// DEPURACIÓN - Mostrar ID del padre
+echo "<!-- DEBUG: ID del padre en sesión: " . $id_padre . " -->";
+
+// Consulta de prueba SIMPLE
+try {
+    $test_sql = "SELECT u.id, u.nombre, u.avatar 
+                 FROM vinculaciones v 
+                 JOIN usuarios u ON v.id_alumno = u.id 
+                 WHERE v.id_padre = ? AND v.estado = 'activo'";
+    $test_stmt = $conn->pdo->prepare($test_sql);
+    $test_stmt->execute([$id_padre]);
+    $test_hijos = $test_stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    echo "<!-- DEBUG: Prueba simple encontró " . count($test_hijos) . " hijos -->";
+    if (count($test_hijos) > 0) {
+        echo "<!-- DEBUG: Primer hijo: " . $test_hijos[0]['nombre'] . " -->";
+    }
+} catch(PDOException $e) {
+    echo "<!-- DEBUG Error: " . $e->getMessage() . " -->";
 }
 ?>
 <!DOCTYPE html>

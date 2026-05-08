@@ -10,19 +10,21 @@ if (!isset($_SESSION['user_id']) || $_SESSION['tipo'] != 'padre') {
 
 $id_padre = $_SESSION['user_id'];
 
-// Obtener datos del padre desde la base de datos
-$query_padre = "SELECT nombre FROM usuarios WHERE id = ? AND tipo = 'padre'";
-$stmt_padre = $conn->prepare($query_padre);
-$stmt_padre->bind_param("i", $id_padre);
-$stmt_padre->execute();
-$result_padre = $stmt_padre->get_result();
-if ($row_padre = $result_padre->fetch_assoc()) {
-    $nombre_padre = $row_padre['nombre'];
-} else {
-    // Si no se encuentra (raro), usar un fallback
+// Obtener datos del padre desde la base de datos (usando PDO)
+try {
+    $query_padre = "SELECT nombre FROM usuarios WHERE id = ? AND tipo = 'padre'";
+    $stmt_padre = $conn->pdo->prepare($query_padre);
+    $stmt_padre->execute([$id_padre]);
+    $row_padre = $stmt_padre->fetch(PDO::FETCH_ASSOC);
+    
+    if ($row_padre) {
+        $nombre_padre = $row_padre['nombre'];
+    } else {
+        $nombre_padre = 'Padre';
+    }
+} catch(PDOException $e) {
     $nombre_padre = 'Padre';
 }
-$stmt_padre->close();
 
 // Iniciales para avatar del padre
 $iniciales = '';
@@ -41,33 +43,38 @@ if ($id_hijo <= 0) {
 }
 
 // Verificar que el hijo esté vinculado al padre
-$query_vinculo = "SELECT id FROM vinculaciones WHERE id_padre = ? AND id_alumno = ? AND estado = 'activo'";
-$stmt_vinculo = $conn->prepare($query_vinculo);
-$stmt_vinculo->bind_param("ii", $id_padre, $id_hijo);
-$stmt_vinculo->execute();
-$stmt_vinculo->store_result();
-if ($stmt_vinculo->num_rows == 0) {
+try {
+    $query_vinculo = "SELECT id FROM vinculaciones WHERE id_padre = ? AND id_alumno = ? AND estado = 'activo'";
+    $stmt_vinculo = $conn->pdo->prepare($query_vinculo);
+    $stmt_vinculo->execute([$id_padre, $id_hijo]);
+    
+    if ($stmt_vinculo->rowCount() == 0) {
+        header("Location: dashboard_padre.php");
+        exit();
+    }
+} catch(PDOException $e) {
     header("Location: dashboard_padre.php");
     exit();
 }
-$stmt_vinculo->close();
 
 // Obtener datos del hijo
-$query_hijo = "SELECT nombre, avatar, fecha_nacimiento FROM usuarios WHERE id = ? AND tipo = 'alumno'";
-$stmt_hijo = $conn->prepare($query_hijo);
-$stmt_hijo->bind_param("i", $id_hijo);
-$stmt_hijo->execute();
-$result_hijo = $stmt_hijo->get_result();
-$hijo = $result_hijo->fetch_assoc();
-$stmt_hijo->close();
+try {
+    $query_hijo = "SELECT nombre, avatar, fecha_nacimiento FROM usuarios WHERE id = ? AND tipo = 'alumno'";
+    $stmt_hijo = $conn->pdo->prepare($query_hijo);
+    $stmt_hijo->execute([$id_hijo]);
+    $hijo = $stmt_hijo->fetch(PDO::FETCH_ASSOC);
+} catch(PDOException $e) {
+    $hijo = null;
+}
 
 if (!$hijo) {
     header("Location: dashboard_padre.php");
     exit();
 }
 
-// Calcular edad
-$edad = date_diff(date_create($hijo['fecha_nacimiento']), date_create('today'))->y;
+// Calcular edad (PostgreSQL)
+$fecha_nac = $hijo['fecha_nacimiento'];
+$edad = date_diff(date_create($fecha_nac), date_create('today'))->y;
 
 // Emoji según avatar
 function getAvatarEmoji($avatar) {
@@ -81,60 +88,65 @@ $emoji_hijo = getAvatarEmoji($hijo['avatar']);
 
 // --- ESTADÍSTICAS GENERALES ---
 // Promedio general (de todas las evaluaciones)
-$query_promedio = "
-    SELECT AVG(ev.calificacion) AS promedio
-    FROM evaluaciones ev
-    JOIN entregas en ON ev.id_entrega = en.id
-    WHERE en.id_alumno = ?
-";
-$stmt = $conn->prepare($query_promedio);
-$stmt->bind_param("i", $id_hijo);
-$stmt->execute();
-$res_prom = $stmt->get_result()->fetch_assoc();
-$promedio_general = $res_prom['promedio'] ? round($res_prom['promedio'], 1) : 0;
-$stmt->close();
+try {
+    $query_promedio = "
+        SELECT COALESCE(AVG(ev.calificacion), 0) AS promedio
+        FROM evaluaciones ev
+        JOIN entregas en ON ev.id_entrega = en.id
+        WHERE en.id_alumno = ?
+    ";
+    $stmt = $conn->pdo->prepare($query_promedio);
+    $stmt->execute([$id_hijo]);
+    $res_prom = $stmt->fetch(PDO::FETCH_ASSOC);
+    $promedio_general = round($res_prom['promedio'], 1);
+} catch(PDOException $e) {
+    $promedio_general = 0;
+}
 
 // Actividades completadas (entregas con estado 'calificado')
-$query_completadas = "
-    SELECT COUNT(*) AS total
-    FROM entregas
-    WHERE id_alumno = ? AND estado = 'calificado'
-";
-$stmt = $conn->prepare($query_completadas);
-$stmt->bind_param("i", $id_hijo);
-$stmt->execute();
-$completadas = $stmt->get_result()->fetch_assoc()['total'];
-$stmt->close();
+try {
+    $query_completadas = "SELECT COUNT(*) AS total FROM entregas WHERE id_alumno = ? AND estado = 'calificado'";
+    $stmt = $conn->pdo->prepare($query_completadas);
+    $stmt->execute([$id_hijo]);
+    $completadas = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+} catch(PDOException $e) {
+    $completadas = 0;
+}
 
 // Total de actividades asignadas (en cursos inscritos)
-$query_total_act = "
-    SELECT COUNT(*) AS total
-    FROM actividades a
-    JOIN cursos c ON a.id_curso = c.id
-    JOIN inscripciones i ON i.id_curso = c.id
-    WHERE i.id_alumno = ? AND i.estado = 'activo'
-";
-$stmt = $conn->prepare($query_total_act);
-$stmt->bind_param("i", $id_hijo);
-$stmt->execute();
-$total_actividades = $stmt->get_result()->fetch_assoc()['total'];
-$stmt->close();
+try {
+    $query_total_act = "
+        SELECT COUNT(*) AS total
+        FROM actividades a
+        JOIN cursos c ON a.id_curso = c.id
+        JOIN inscripciones i ON i.id_curso = c.id
+        WHERE i.id_alumno = ? AND i.estado = 'activo'
+    ";
+    $stmt = $conn->pdo->prepare($query_total_act);
+    $stmt->execute([$id_hijo]);
+    $total_actividades = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+} catch(PDOException $e) {
+    $total_actividades = 0;
+}
 
 // Racha de días (simulado)
 $racha_dias = 5;
 
-// Tiempo total de estudio esta semana
-$query_tiempo = "
-    SELECT SUM(TIME_TO_SEC(tiempo_total)) AS total_segundos
-    FROM progreso
-    WHERE id_alumno = ? AND fecha_actualizacion >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
-";
-$stmt = $conn->prepare($query_tiempo);
-$stmt->bind_param("i", $id_hijo);
-$stmt->execute();
-$res_tiempo = $stmt->get_result()->fetch_assoc();
-$tiempo_seg = $res_tiempo['total_segundos'] ?? 0;
-$stmt->close();
+// Tiempo total de estudio esta semana (PostgreSQL)
+try {
+    $query_tiempo = "
+        SELECT COALESCE(EXTRACT(EPOCH FROM SUM(tiempo_total)), 0) AS total_segundos
+        FROM progreso
+        WHERE id_alumno = ? AND fecha_actualizacion >= CURRENT_DATE - INTERVAL '7 days'
+    ";
+    $stmt = $conn->pdo->prepare($query_tiempo);
+    $stmt->execute([$id_hijo]);
+    $res_tiempo = $stmt->fetch(PDO::FETCH_ASSOC);
+    $tiempo_seg = $res_tiempo['total_segundos'] ?? 0;
+} catch(PDOException $e) {
+    $tiempo_seg = 0;
+}
+
 $horas = floor($tiempo_seg / 3600);
 $minutos = floor(($tiempo_seg % 3600) / 60);
 $tiempo_total = ($horas ? $horas.'h ' : '') . $minutos.'m';
@@ -151,47 +163,51 @@ $logros = [
 ];
 
 // --- RETROALIMENTACIÓN DE DOCENTES ---
-$query_feedback = "
-    SELECT 
-        u.nombre AS tutor,
-        ev.comentarios,
-        ev.fecha_evaluacion,
-        a.titulo AS actividad,
-        c.nombre AS curso
-    FROM evaluaciones ev
-    JOIN entregas en ON ev.id_entrega = en.id
-    JOIN usuarios u ON ev.id_tutor = u.id
-    JOIN actividades a ON en.id_actividad = a.id
-    JOIN cursos c ON a.id_curso = c.id
-    WHERE en.id_alumno = ? AND ev.comentarios IS NOT NULL AND ev.comentarios != ''
-    ORDER BY ev.fecha_evaluacion DESC
-    LIMIT 5
-";
-$stmt = $conn->prepare($query_feedback);
-$stmt->bind_param("i", $id_hijo);
-$stmt->execute();
-$feedbacks = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$stmt->close();
+try {
+    $query_feedback = "
+        SELECT 
+            u.nombre AS tutor,
+            ev.comentarios,
+            ev.fecha_evaluacion,
+            a.titulo AS actividad,
+            c.nombre AS curso
+        FROM evaluaciones ev
+        JOIN entregas en ON ev.id_entrega = en.id
+        JOIN usuarios u ON ev.id_tutor = u.id
+        JOIN actividades a ON en.id_actividad = a.id
+        JOIN cursos c ON a.id_curso = c.id
+        WHERE en.id_alumno = ? AND ev.comentarios IS NOT NULL AND ev.comentarios != ''
+        ORDER BY ev.fecha_evaluacion DESC
+        LIMIT 5
+    ";
+    $stmt = $conn->pdo->prepare($query_feedback);
+    $stmt->execute([$id_hijo]);
+    $feedbacks = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch(PDOException $e) {
+    $feedbacks = [];
+}
 
 // --- DESEMPEÑO POR MATERIA ---
-$query_materias = "
-    SELECT 
-        c.nombre AS materia,
-        AVG(ev.calificacion) AS promedio,
-        COUNT(ev.id) AS evaluaciones
-    FROM cursos c
-    JOIN actividades a ON a.id_curso = c.id
-    JOIN entregas en ON en.id_actividad = a.id
-    JOIN evaluaciones ev ON ev.id_entrega = en.id
-    WHERE en.id_alumno = ?
-    GROUP BY c.id
-    ORDER BY promedio DESC
-";
-$stmt = $conn->prepare($query_materias);
-$stmt->bind_param("i", $id_hijo);
-$stmt->execute();
-$materias = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$stmt->close();
+try {
+    $query_materias = "
+        SELECT 
+            c.nombre AS materia,
+            COALESCE(AVG(ev.calificacion), 0) AS promedio,
+            COUNT(ev.id) AS evaluaciones
+        FROM cursos c
+        JOIN actividades a ON a.id_curso = c.id
+        JOIN entregas en ON en.id_actividad = a.id
+        JOIN evaluaciones ev ON ev.id_entrega = en.id
+        WHERE en.id_alumno = ?
+        GROUP BY c.id, c.nombre
+        ORDER BY promedio DESC
+    ";
+    $stmt = $conn->pdo->prepare($query_materias);
+    $stmt->execute([$id_hijo]);
+    $materias = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch(PDOException $e) {
+    $materias = [];
+}
 
 // Colores para materias
 $colores = ['#2cbaec', '#83bf46', '#f0ae2a', '#a78bfa', '#fb7185'];

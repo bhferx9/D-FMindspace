@@ -11,12 +11,21 @@ if (!isset($_SESSION['user_id']) || $_SESSION['tipo'] != 'alumno') {
 $alumno_id = $_SESSION['user_id'];
 $nombre_alumno = $_SESSION['nombre'];
 
-// Consultar cursos en los que está inscrito
-$query_cursos = "SELECT c.nombre, c.descripcion, i.progreso, i.id_curso, c.nivel 
-                 FROM inscripciones i 
-                 JOIN cursos c ON i.id_curso = c.id 
-                 WHERE i.id_alumno = '$alumno_id' AND i.estado = 'activo'";
-$res_cursos = mysqli_query($conn, $query_cursos);
+// Consultar cursos en los que está inscrito - USANDO PDO DIRECTAMENTE
+try {
+    $stmt = $conn->pdo->prepare("
+        SELECT c.nombre, c.descripcion, i.progreso, i.id_curso, c.nivel 
+        FROM inscripciones i 
+        JOIN cursos c ON i.id_curso = c.id 
+        WHERE i.id_alumno = ? AND i.estado = 'activo'
+    ");
+    $stmt->execute([$alumno_id]);
+    $cursos_array = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $num_cursos = count($cursos_array);
+} catch(PDOException $e) {
+    $cursos_array = [];
+    $num_cursos = 0;
+}
 
 // Consultar notificaciones recientes
 $query_notif = "SELECT * FROM notificaciones WHERE id_usuario = '$alumno_id' AND leido = FALSE LIMIT 5";
@@ -82,6 +91,48 @@ if(!isset($avatares[$avatar_key])) {
 $avatar_emoji = $avatares[$avatar_key]['emoji'];
 $avatar_color = $avatares[$avatar_key]['color'];
 $avatar_nombre = ucfirst($avatar_key);
+// Consultar cursos en los que está inscrito
+$query_cursos = "SELECT c.nombre, c.descripcion, i.progreso, i.id_curso, c.nivel 
+                 FROM inscripciones i 
+                 JOIN cursos c ON i.id_curso = c.id 
+                 WHERE i.id_alumno = '$alumno_id' AND i.estado = 'activo'";
+$res_cursos = mysqli_query($conn, $query_cursos);
+
+// =============================================
+// CÓDIGO DE DEPURACIÓN - ELIMINAR DESPUÉS
+// =============================================
+echo "<!-- DEBUG: ID del alumno: " . $alumno_id . " -->";
+
+if (!$res_cursos) {
+    echo "<!-- ERROR en consulta: " . mysqli_error($conn) . " -->";
+} else {
+    $num_filas = mysqli_num_rows($res_cursos);
+    echo "<!-- DEBUG: Número de cursos encontrados: " . $num_filas . " -->";
+    
+    if ($num_filas == 0) {
+        // Verificar si hay inscripciones activas
+        $check_inscripciones = mysqli_query($conn, "SELECT * FROM inscripciones WHERE id_alumno = '$alumno_id'");
+        if ($check_inscripciones) {
+            $total_inscripciones = mysqli_num_rows($check_inscripciones);
+            echo "<!-- DEBUG: Total de inscripciones para este alumno: " . $total_inscripciones . " -->";
+            
+            // Mostrar estado de las inscripciones
+            while($ins = mysqli_fetch_assoc($check_inscripciones)) {
+                echo "<!-- DEBUG: Inscripción - Curso ID: " . $ins['id_curso'] . ", Estado: " . $ins['estado'] . " -->";
+            }
+        }
+        
+        // Verificar si hay cursos en la tabla cursos
+        $check_cursos = mysqli_query($conn, "SELECT COUNT(*) as total FROM cursos");
+        if ($check_cursos) {
+            $total_cursos_db = mysqli_fetch_assoc($check_cursos)['total'];
+            echo "<!-- DEBUG: Total de cursos en la base de datos: " . $total_cursos_db . " -->";
+        }
+    }
+}
+// =============================================
+// FIN CÓDIGO DE DEPURACIÓN
+// =============================================
 ?>
 
 <!DOCTYPE html>
@@ -959,8 +1010,8 @@ $avatar_nombre = ucfirst($avatar_key);
                     <a href="mis_cursos.php" class="nav-link">
                         <i class="fas fa-compass"></i>
                         <span>Mis Aventuras</span>
-                        <?php if(mysqli_num_rows($res_cursos) > 0): ?>
-                            <span class="badge-notification ms-auto"><?php echo mysqli_num_rows($res_cursos); ?></span>
+                        <?php if($num_cursos > 0): ?>
+                            <span class="badge-notification ms-auto"><?php echo $num_cursos; ?></span>
                         <?php endif; ?>
                     </a>
                 </li>
@@ -1045,7 +1096,7 @@ $avatar_nombre = ucfirst($avatar_key);
                     <i class="fas fa-compass"></i>
                 </div>
                 <div class="stat-value">
-                    <?php echo mysqli_num_rows($res_cursos); ?>
+                    <?php echo $num_cursos; ?>
                 </div>
                 <div class="stat-label">Aventuras Activas</div>
             </div>
@@ -1077,10 +1128,8 @@ $avatar_nombre = ucfirst($avatar_key);
                 <div class="stat-value">
                     <?php 
                     $progreso_total = 0;
-                    $num_cursos = mysqli_num_rows($res_cursos);
                     if($num_cursos > 0) {
-                        mysqli_data_seek($res_cursos, 0);
-                        while($curso = mysqli_fetch_assoc($res_cursos)) {
+                        foreach($cursos_array as $curso) {
                             $progreso_total += $curso['progreso'];
                         }
                         echo round($progreso_total / $num_cursos) . '%';
@@ -1108,11 +1157,10 @@ $avatar_nombre = ucfirst($avatar_key);
             </div>
         </div>
         
-        <!-- Grid de cursos mejorado -->
-        <?php if(mysqli_num_rows($res_cursos) > 0): ?>
+                <!-- Grid de cursos mejorado -->
+        <?php if($num_cursos > 0): ?>
             <div class="courses-grid">
-                <?php mysqli_data_seek($res_cursos, 0); // Resetear puntero ?>
-                <?php while($curso = mysqli_fetch_assoc($res_cursos)): 
+                <?php foreach($cursos_array as $curso): 
                     // Determinar color del curso basado en nivel
                     $nivel_color = 'primary';
                     switch(strtolower($curso['nivel'])) {
@@ -1175,7 +1223,7 @@ $avatar_nombre = ucfirst($avatar_key);
                         </div>
                     </div>
                 </div>
-                <?php endwhile; ?>
+                <?php endforeach; ?>
             </div>
         <?php else: ?>
             <div class="text-center py-5 fade-in-up" style="background: white; border-radius: 25px; padding: 60px 30px; box-shadow: var(--card-shadow);">

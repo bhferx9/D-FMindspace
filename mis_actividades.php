@@ -98,7 +98,7 @@ $query_cursos = "SELECT DISTINCT c.id, c.nombre
                  ORDER BY c.nombre";
 $res_cursos = mysqli_query($conn, $query_cursos);
 
-// Obtener avatar del alumno
+// Obtener avatar del alumno - CORREGIDO PARA POSTGRESQL
 $avatares = [
     'panda' => ['emoji' => '🐼', 'color' => '#3A506B', 'nivel' => 1],
     'dragon' => ['emoji' => '🐉', 'color' => '#FF6B6B', 'nivel' => 1],
@@ -110,16 +110,15 @@ $avatares = [
     'mago' => ['emoji' => '🧙‍♂️', 'color' => '#00C2A8', 'nivel' => 6]
 ];
 
-$check_avatar_col = mysqli_query($conn, "SHOW COLUMNS FROM usuarios LIKE 'avatar'");
-$avatar_key = 'panda';
+// Consulta directa del avatar (sin SHOW COLUMNS)
+$query_avatar = "SELECT COALESCE(avatar, 'panda') as avatar FROM usuarios WHERE id = '$alumno_id'";
+$res_avatar = mysqli_query($conn, $query_avatar);
 
-if(mysqli_num_rows($check_avatar_col) > 0) {
-    $query_avatar = "SELECT avatar FROM usuarios WHERE id = '$alumno_id'";
-    $res_avatar = mysqli_query($conn, $query_avatar);
-    if($res_avatar && mysqli_num_rows($res_avatar) > 0) {
-        $avatar_data = mysqli_fetch_assoc($res_avatar);
-        $avatar_key = $avatar_data['avatar'] ?: 'panda';
-    }
+if ($res_avatar && mysqli_num_rows($res_avatar) > 0) {
+    $avatar_data = mysqli_fetch_assoc($res_avatar);
+    $avatar_key = $avatar_data['avatar'];
+} else {
+    $avatar_key = 'panda';
 }
 
 if(!isset($avatares[$avatar_key])) {

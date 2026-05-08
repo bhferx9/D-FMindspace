@@ -2,7 +2,6 @@
 include 'php/config.php';
 session_start();
 
-
 // Verificar que el usuario sea administrador
 if (!isset($_SESSION['user_id']) || $_SESSION['tipo'] != 'admin') {
     header("Location: index.php");
@@ -21,7 +20,7 @@ if (count($partes) >= 2) {
     $iniciales = strtoupper(substr($admin_nombre, 0, 2));
 }
 
-// --- CONSULTAS PARA GRÁFICOS Y ESTADÍSTICAS ---
+// --- CONSULTAS PARA GRÁFICOS Y ESTADÍSTICAS (CORREGIDAS PARA POSTGRESQL) ---
 
 // 1. Usuarios nuevos por mes (últimos 6 meses)
 $usuarios_meses = [];
@@ -29,17 +28,21 @@ $meses_labels = [];
 for ($i = 5; $i >= 0; $i--) {
     $mes = date('Y-m', strtotime("-$i months"));
     $meses_labels[] = date('M Y', strtotime($mes));
-    $query = "SELECT COUNT(*) AS total FROM usuarios WHERE DATE_FORMAT(fecha_registro, '%Y-%m') = '$mes'";
+    // PostgreSQL: usar TO_CHAR para formatear fecha
+    $query = "SELECT COUNT(*) AS total FROM usuarios WHERE TO_CHAR(fecha_registro, 'YYYY-MM') = '$mes'";
     $res = mysqli_query($conn, $query);
-    $usuarios_meses[] = mysqli_fetch_assoc($res)['total'];
+    $row = $res ? mysqli_fetch_assoc($res) : null;
+    $usuarios_meses[] = $row ? $row['total'] : 0;
 }
 
 // 2. Distribución de usuarios por rol
 $query_roles = "SELECT tipo, COUNT(*) AS total FROM usuarios GROUP BY tipo";
 $res_roles = mysqli_query($conn, $query_roles);
 $roles_data = [];
-while ($r = mysqli_fetch_assoc($res_roles)) {
-    $roles_data[$r['tipo']] = $r['total'];
+if ($res_roles) {
+    while ($r = mysqli_fetch_assoc($res_roles)) {
+        $roles_data[$r['tipo']] = $r['total'];
+    }
 }
 
 // 3. Actividad semanal: entregas realizadas por día (últimos 7 días)
@@ -48,9 +51,11 @@ $dias_labels = [];
 for ($i = 6; $i >= 0; $i--) {
     $fecha = date('Y-m-d', strtotime("-$i days"));
     $dias_labels[] = date('D', strtotime($fecha));
-    $query = "SELECT COUNT(*) AS total FROM entregas WHERE DATE(fecha_entrega) = '$fecha'";
+    // PostgreSQL: usar CAST para obtener solo fecha
+    $query = "SELECT COUNT(*) AS total FROM entregas WHERE fecha_entrega::DATE = '$fecha'";
     $res = mysqli_query($conn, $query);
-    $entregas_semana[] = mysqli_fetch_assoc($res)['total'];
+    $row = $res ? mysqli_fetch_assoc($res) : null;
+    $entregas_semana[] = $row ? $row['total'] : 0;
 }
 
 // 4. Top 5 cursos con más inscripciones
@@ -59,16 +64,18 @@ $query_top_cursos = "
     FROM cursos c 
     JOIN inscripciones i ON c.id = i.id_curso 
     WHERE i.estado = 'activo' 
-    GROUP BY c.id 
+    GROUP BY c.id, c.nombre
     ORDER BY inscripciones DESC 
     LIMIT 5
 ";
 $res_top_cursos = mysqli_query($conn, $query_top_cursos);
 $top_cursos_nombres = [];
 $top_cursos_inscripciones = [];
-while ($c = mysqli_fetch_assoc($res_top_cursos)) {
-    $top_cursos_nombres[] = $c['nombre'];
-    $top_cursos_inscripciones[] = $c['inscripciones'];
+if ($res_top_cursos) {
+    while ($c = mysqli_fetch_assoc($res_top_cursos)) {
+        $top_cursos_nombres[] = $c['nombre'];
+        $top_cursos_inscripciones[] = $c['inscripciones'];
+    }
 }
 
 // 5. Promedio de calificaciones por curso (top 5 con más evaluaciones)
@@ -78,17 +85,19 @@ $query_prom_cursos = "
     JOIN actividades a ON a.id_curso = c.id
     JOIN entregas en ON en.id_actividad = a.id
     JOIN evaluaciones ev ON ev.id_entrega = en.id
-    GROUP BY c.id
-    HAVING evaluaciones > 0
+    GROUP BY c.id, c.nombre
+    HAVING COUNT(ev.id) > 0
     ORDER BY evaluaciones DESC
     LIMIT 5
 ";
 $res_prom_cursos = mysqli_query($conn, $query_prom_cursos);
 $prom_cursos_nombres = [];
 $prom_cursos_promedios = [];
-while ($c = mysqli_fetch_assoc($res_prom_cursos)) {
-    $prom_cursos_nombres[] = $c['nombre'];
-    $prom_cursos_promedios[] = round($c['promedio'], 1);
+if ($res_prom_cursos) {
+    while ($c = mysqli_fetch_assoc($res_prom_cursos)) {
+        $prom_cursos_nombres[] = $c['nombre'];
+        $prom_cursos_promedios[] = round($c['promedio'], 1);
+    }
 }
 
 // 6. Total de actividades por tipo
@@ -96,9 +105,11 @@ $query_tipos_act = "SELECT tipo, COUNT(*) AS total FROM actividades GROUP BY tip
 $res_tipos = mysqli_query($conn, $query_tipos_act);
 $tipos_labels = [];
 $tipos_totales = [];
-while ($t = mysqli_fetch_assoc($res_tipos)) {
-    $tipos_labels[] = $t['tipo'];
-    $tipos_totales[] = $t['total'];
+if ($res_tipos) {
+    while ($t = mysqli_fetch_assoc($res_tipos)) {
+        $tipos_labels[] = $t['tipo'];
+        $tipos_totales[] = $t['total'];
+    }
 }
 
 // 7. Ingresos mensuales (simulados para gráfico)

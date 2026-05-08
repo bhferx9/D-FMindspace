@@ -71,6 +71,98 @@ try {
             return substr($escaped, 1, -1);
         }
     }
+    // =============================================
+    // FUNCIONES MYSQLI ADICIONALES PARA COMPATIBILIDAD
+    // =============================================
+
+    if (!function_exists('mysqli_free_result')) {
+        function mysqli_free_result($result) {
+            // PDO no necesita liberar resultados manualmente
+            return true;
+        }
+    }
+
+    if (!function_exists('mysqli_fetch_row')) {
+        function mysqli_fetch_row($result) {
+            if ($result) {
+                $row = $result->fetch(PDO::FETCH_NUM);
+                return $row !== false ? $row : null;
+            }
+            return null;
+        }
+    }
+
+    if (!function_exists('mysqli_fetch_object')) {
+        function mysqli_fetch_object($result) {
+            if ($result) {
+                return $result->fetch(PDO::FETCH_OBJ);
+            }
+            return null;
+        }
+    }
+
+    if (!function_exists('mysqli_stmt_bind_param')) {
+        function mysqli_stmt_bind_param($stmt, $types, ...$params) {
+            // Esto es más complejo, mejor usar consultas preparadas directamente
+            return false;
+        }
+    }
+
+    if (!function_exists('mysqli_prepare')) {
+        function mysqli_prepare($conn, $sql) {
+            return $conn->pdo->prepare($sql);
+        }
+    }
+
+    if (!function_exists('mysqli_stmt_execute')) {
+        function mysqli_stmt_execute($stmt) {
+            return $stmt->execute();
+        }
+    }
+
+    if (!function_exists('mysqli_stmt_get_result')) {
+        function mysqli_stmt_get_result($stmt) {
+            return $stmt;
+        }
+    }
+
+    if (!function_exists('mysqli_fetch_assoc')) {
+        function mysqli_fetch_assoc($result) {
+            if ($result) {
+                return $result->fetch(PDO::FETCH_ASSOC);
+            }
+            return false;
+        }
+    }
+
+    if (!function_exists('mysqli_num_rows')) {
+        function mysqli_num_rows($result) {
+            if ($result) {
+                if ($result instanceof PDOStatement) {
+                    return $result->rowCount();
+                }
+                // Si es un array, contar elementos
+                if (is_array($result)) {
+                    return count($result);
+                }
+            }
+            return 0;
+        }
+    }
+
+    if (!function_exists('mysqli_fetch_all')) {
+    function mysqli_fetch_all($result, $mode = MYSQLI_ASSOC) {
+        $rows = [];
+        while ($row = mysqli_fetch_assoc($result)) {
+            if ($mode === MYSQLI_ASSOC) {
+                $rows[] = $row;
+            } elseif ($mode === MYSQLI_NUM) {
+                $rows[] = array_values($row);
+            }
+        }
+        return $rows;
+    }
+}
     
 } catch(PDOException $e) {
     die("Error de conexión: " . $e->getMessage());

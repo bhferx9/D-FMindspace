@@ -20,27 +20,33 @@ if (count($partes) >= 2) {
     $iniciales = strtoupper(substr($admin_nombre, 0, 2));
 }
 
-// --- CONSULTAS PARA MÉTRICAS ---
-// Total de usuarios
-$total_usuarios = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) AS total FROM usuarios"))['total'];
-
-// Nuevos este mes (registros en los últimos 30 días)
-$nuevos_mes = mysqli_fetch_assoc(mysqli_query($conn, 
-    "SELECT COUNT(*) AS total FROM usuarios WHERE fecha_registro >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)"
-))['total'];
-
-// Cursos activos
-$cursos_activos = mysqli_fetch_assoc(mysqli_query($conn, 
-    "SELECT COUNT(*) AS total FROM cursos WHERE activo = 1"
-))['total'];
-
-// Cursos con alumnos inscritos (activos)
-$cursos_con_alumnos = mysqli_fetch_assoc(mysqli_query($conn, 
-    "SELECT COUNT(DISTINCT c.id) AS total 
-     FROM cursos c 
-     JOIN inscripciones i ON c.id = i.id_curso 
-     WHERE c.activo = 1 AND i.estado = 'activo'"
-))['total'];
+// --- CONSULTAS PARA MÉTRICAS (CORREGIDAS PARA POSTGRESQL) ---
+try {
+    // Total de usuarios
+    $res = mysqli_query($conn, "SELECT COUNT(*) AS total FROM usuarios");
+    $total_usuarios = $res ? mysqli_fetch_assoc($res)['total'] : 0;
+    
+    // Nuevos este mes (registros en los últimos 30 días)
+    $res = mysqli_query($conn, "SELECT COUNT(*) AS total FROM usuarios WHERE fecha_registro >= CURRENT_DATE - INTERVAL '30 days'");
+    $nuevos_mes = $res ? mysqli_fetch_assoc($res)['total'] : 0;
+    
+    // Cursos activos (PostgreSQL usa TRUE/FALSE para booleanos)
+    $res = mysqli_query($conn, "SELECT COUNT(*) AS total FROM cursos WHERE activo = TRUE");
+    $cursos_activos = $res ? mysqli_fetch_assoc($res)['total'] : 0;
+    
+    // Cursos con alumnos inscritos (activos)
+    $res = mysqli_query($conn, "SELECT COUNT(DISTINCT c.id) AS total 
+                                FROM cursos c 
+                                JOIN inscripciones i ON c.id = i.id_curso 
+                                WHERE c.activo = TRUE AND i.estado = 'activo'");
+    $cursos_con_alumnos = $res ? mysqli_fetch_assoc($res)['total'] : 0;
+    
+} catch(Exception $e) {
+    $total_usuarios = 0;
+    $nuevos_mes = 0;
+    $cursos_activos = 0;
+    $cursos_con_alumnos = 0;
+}
 
 // Ingresos del mes (simulado – podrías tener tabla de pagos)
 $ingresos_mes = 48000; // Placeholder
@@ -59,8 +65,10 @@ $query_ultimos = "
 ";
 $res_ultimos = mysqli_query($conn, $query_ultimos);
 $ultimos_usuarios = [];
-while ($u = mysqli_fetch_assoc($res_ultimos)) {
-    $ultimos_usuarios[] = $u;
+if ($res_ultimos) {
+    while ($u = mysqli_fetch_assoc($res_ultimos)) {
+        $ultimos_usuarios[] = $u;
+    }
 }
 
 // Función para avatar emoji/color según tipo

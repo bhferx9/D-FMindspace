@@ -8,21 +8,23 @@ if (!isset($_SESSION['user_id']) || $_SESSION['tipo'] != 'padre') {
     exit();
 }
 
-$id_padre = $_SESSION['user_id'];
+$id_padre = (int)$_SESSION['user_id'];
 
-// Obtener datos del padre desde la base de datos
-$query_padre = "SELECT nombre FROM usuarios WHERE id = ? AND tipo = 'padre'";
-$stmt_padre = $conn->prepare($query_padre);
-$stmt_padre->bind_param("i", $id_padre);
-$stmt_padre->execute();
-$result_padre = $stmt_padre->get_result();
-if ($row_padre = $result_padre->fetch_assoc()) {
-    $nombre_padre = $row_padre['nombre'];
-} else {
-    // Si no se encuentra (raro), usar un fallback
+// Obtener datos del padre desde la base de datos (PDO)
+try {
+    $query_padre = "SELECT nombre FROM usuarios WHERE id = :id AND tipo = 'padre'";
+    $stmt_padre = $conn->pdo->prepare($query_padre);
+    $stmt_padre->execute([':id' => $id_padre]);
+    $row_padre = $stmt_padre->fetch(PDO::FETCH_ASSOC);
+    
+    if ($row_padre) {
+        $nombre_padre = $row_padre['nombre'];
+    } else {
+        $nombre_padre = 'Padre';
+    }
+} catch(PDOException $e) {
     $nombre_padre = 'Padre';
 }
-$stmt_padre->close();
 
 // Iniciales para avatar
 $iniciales = '';
@@ -33,22 +35,24 @@ if (count($partes) >= 2) {
     $iniciales = strtoupper(substr($nombre_padre, 0, 2));
 }
 
-// Obtener hijos vinculados para el selector
-$query_hijos = "
-    SELECT u.id, u.nombre 
-    FROM vinculaciones v
-    JOIN usuarios u ON v.id_alumno = u.id
-    WHERE v.id_padre = ? AND v.estado = 'activo' AND u.activo = 1
-    ORDER BY u.nombre
-";
-$stmt_hijos = $conn->prepare($query_hijos);
-$stmt_hijos->bind_param("i", $id_padre);
-$stmt_hijos->execute();
-$hijos = $stmt_hijos->get_result()->fetch_all(MYSQLI_ASSOC);
-$stmt_hijos->close();
+// Obtener hijos vinculados para el selector (PDO)
+try {
+    $query_hijos = "
+        SELECT u.id, u.nombre 
+        FROM vinculaciones v
+        JOIN usuarios u ON v.id_alumno = u.id
+        WHERE v.id_padre = :id_padre AND v.estado = 'activo' AND u.activo = TRUE
+        ORDER BY u.nombre
+    ";
+    $stmt_hijos = $conn->pdo->prepare($query_hijos);
+    $stmt_hijos->execute([':id_padre' => $id_padre]);
+    $hijos = $stmt_hijos->fetchAll(PDO::FETCH_ASSOC);
+} catch(PDOException $e) {
+    $hijos = [];
+}
 
 // Determinar hijo seleccionado (por GET o primer hijo)
-$id_hijo_seleccionado = isset($_GET['hijo']) ? intval($_GET['hijo']) : (count($hijos) > 0 ? $hijos[0]['id'] : 0);
+$id_hijo_seleccionado = isset($_GET['hijo']) ? (int)$_GET['hijo'] : (count($hijos) > 0 ? $hijos[0]['id'] : 0);
 $nombre_hijo_seleccionado = '';
 foreach ($hijos as $h) {
     if ($h['id'] == $id_hijo_seleccionado) {
@@ -62,58 +66,61 @@ if (empty($hijos)) {
     $mensaje_sin_hijos = true;
 } else {
     // Obtener estadísticas del hijo seleccionado
-    $stats = [];
     
     // Progreso general (promedio de progreso por curso)
-    $query_progreso = "
-        SELECT AVG(porcentaje) AS promedio_global 
-        FROM progreso 
-        WHERE id_alumno = ?
-    ";
-    $stmt = $conn->prepare($query_progreso);
-    $stmt->bind_param("i", $id_hijo_seleccionado);
-    $stmt->execute();
-    $res = $stmt->get_result()->fetch_assoc();
-    $progreso_global = $res['promedio_global'] ? round($res['promedio_global']) : 0;
-    $stmt->close();
+    try {
+        $query_progreso = "SELECT COALESCE(AVG(porcentaje), 0) AS promedio_global FROM progreso WHERE id_alumno = :id";
+        $stmt = $conn->pdo->prepare($query_progreso);
+        $stmt->execute([':id' => $id_hijo_seleccionado]);
+        $res = $stmt->fetch(PDO::FETCH_ASSOC);
+        $progreso_global = $res['promedio_global'] ? round($res['promedio_global']) : 0;
+    } catch(PDOException $e) {
+        $progreso_global = 0;
+    }
     
     // Total cursos activos
-    $query_cursos = "SELECT COUNT(*) AS total FROM inscripciones WHERE id_alumno = ? AND estado = 'activo'";
-    $stmt = $conn->prepare($query_cursos);
-    $stmt->bind_param("i", $id_hijo_seleccionado);
-    $stmt->execute();
-    $cursos_activos = $stmt->get_result()->fetch_assoc()['total'];
-    $stmt->close();
+    try {
+        $query_cursos = "SELECT COUNT(*) AS total FROM inscripciones WHERE id_alumno = :id AND estado = 'activo'";
+        $stmt = $conn->pdo->prepare($query_cursos);
+        $stmt->execute([':id' => $id_hijo_seleccionado]);
+        $cursos_activos = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+    } catch(PDOException $e) {
+        $cursos_activos = 0;
+    }
     
     // Promedio de calificaciones (de evaluaciones)
-    $query_calif = "
-        SELECT AVG(e.calificacion) AS promedio_calif
-        FROM evaluaciones e
-        JOIN entregas en ON e.id_entrega = en.id
-        WHERE en.id_alumno = ?
-    ";
-    $stmt = $conn->prepare($query_calif);
-    $stmt->bind_param("i", $id_hijo_seleccionado);
-    $stmt->execute();
-    $res_calif = $stmt->get_result()->fetch_assoc();
-    $promedio_calif = $res_calif['promedio_calif'] ? round($res_calif['promedio_calif'], 1) : '--';
-    $stmt->close();
+    try {
+        $query_calif = "
+            SELECT COALESCE(AVG(e.calificacion), 0) AS promedio_calif
+            FROM evaluaciones e
+            JOIN entregas en ON e.id_entrega = en.id
+            WHERE en.id_alumno = :id
+        ";
+        $stmt = $conn->pdo->prepare($query_calif);
+        $stmt->execute([':id' => $id_hijo_seleccionado]);
+        $res_calif = $stmt->fetch(PDO::FETCH_ASSOC);
+        $promedio_calif = $res_calif['promedio_calif'] ? round($res_calif['promedio_calif'], 1) : '--';
+    } catch(PDOException $e) {
+        $promedio_calif = '--';
+    }
     
     // Últimas actividades con estado
-    $query_actividades = "
-        SELECT a.titulo, c.nombre AS curso, en.estado, ev.calificacion, en.fecha_entrega
-        FROM actividades a
-        JOIN cursos c ON a.id_curso = c.id
-        LEFT JOIN entregas en ON en.id_actividad = a.id AND en.id_alumno = ?
-        LEFT JOIN evaluaciones ev ON ev.id_entrega = en.id
-        ORDER BY en.fecha_entrega DESC
-        LIMIT 5
-    ";
-    $stmt = $conn->prepare($query_actividades);
-    $stmt->bind_param("i", $id_hijo_seleccionado);
-    $stmt->execute();
-    $actividades = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-    $stmt->close();
+    try {
+        $query_actividades = "
+            SELECT a.titulo, c.nombre AS curso, en.estado, ev.calificacion, en.fecha_entrega
+            FROM actividades a
+            JOIN cursos c ON a.id_curso = c.id
+            LEFT JOIN entregas en ON en.id_actividad = a.id AND en.id_alumno = :id
+            LEFT JOIN evaluaciones ev ON ev.id_entrega = en.id
+            ORDER BY en.fecha_entrega DESC
+            LIMIT 5
+        ";
+        $stmt = $conn->pdo->prepare($query_actividades);
+        $stmt->execute([':id' => $id_hijo_seleccionado]);
+        $actividades = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch(PDOException $e) {
+        $actividades = [];
+    }
 }
 ?>
 <!DOCTYPE html>

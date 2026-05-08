@@ -55,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 // Insertar nuevo
                 $insert = "INSERT INTO cursos (nombre, descripcion, nivel, duracion_horas, id_tutor, activo, fecha_creacion) 
-                           VALUES ('$nombre', '$descripcion', '$nivel', $duracion_horas, $id_tutor, $activo, NOW())";
+                            VALUES ('$nombre', '$descripcion', '$nivel', $duracion_horas, $id_tutor, '$activo', CURRENT_TIMESTAMP)";
                 if (mysqli_query($conn, $insert)) {
                     $_SESSION['mensaje'] = ['tipo' => 'success', 'texto' => 'Curso creado exitosamente.'];
                 } else {
@@ -96,7 +96,7 @@ if (!empty($busqueda)) {
     $where[] = "(c.nombre LIKE '%$busqueda%' OR c.descripcion LIKE '%$busqueda%')";
 }
 if ($estado_filtro !== '') {
-    $where[] = "c.activo = " . intval($estado_filtro);
+    $where[] = "c.activo = " . ($estado_filtro == '1' ? 'TRUE' : 'FALSE');
 }
 if ($tutor_filtro > 0) {
     $where[] = "c.id_tutor = $tutor_filtro";
@@ -120,7 +120,7 @@ $query_cursos = "
     LEFT JOIN usuarios u ON c.id_tutor = u.id 
     $where_sql 
     ORDER BY c.fecha_creacion DESC 
-    LIMIT $offset, $por_pagina
+    LIMIT $por_pagina OFFSET $offset
 ";
 $res_cursos = mysqli_query($conn, $query_cursos);
 $cursos = [];
@@ -133,7 +133,7 @@ while ($c = mysqli_fetch_assoc($res_cursos)) {
 }
 
 // Obtener lista de tutores para filtro y asignación
-$tutores_query = "SELECT id, nombre FROM usuarios WHERE tipo = 'tutor' AND activo = 1 ORDER BY nombre";
+$tutores_query = "SELECT id, nombre FROM usuarios WHERE tipo = 'tutor' AND activo = TRUE ORDER BY nombre";
 $tutores_res = mysqli_query($conn, $tutores_query);
 $tutores = [];
 while ($t = mysqli_fetch_assoc($tutores_res)) {

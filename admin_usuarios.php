@@ -147,7 +147,7 @@ $query_usuarios = "
     FROM usuarios 
     $where_sql 
     ORDER BY fecha_registro DESC 
-    LIMIT $offset, $por_pagina
+    LIMIT $por_pagina OFFSET $offset
 ";
 $res_usuarios = mysqli_query($conn, $query_usuarios);
 $usuarios = [];

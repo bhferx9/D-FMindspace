@@ -11,6 +11,7 @@ $tutor_id = $_SESSION['user_id'];
 $tutor_nombre = $_SESSION['nombre'];
 
 // Consultar entregas pendientes con más información
+// Consultar entregas pendientes con más información - CORREGIDO PARA POSTGRESQL
 $sql = "SELECT e.id as entrega_id, 
                u.nombre as alumno_nombre, 
                u.email as alumno_email,
@@ -18,11 +19,13 @@ $sql = "SELECT e.id as entrega_id,
                a.tipo as actividad_tipo,
                a.dificultad as actividad_dificultad,
                c.nombre as curso_nombre,
+               c.id as curso_id,
+               e.id_alumno,
                e.fecha_entrega,
                e.archivo as archivo_adjunto,
                e.respuesta as comentario_alumno,
                ev.calificacion,
-               TIMESTAMPDIFF(HOUR, e.fecha_entrega, NOW()) as horas_pasadas,
+               EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - e.fecha_entrega))/3600 as horas_pasadas,
                COUNT(e2.id) as intentos_totales
         FROM entregas e
         JOIN usuarios u ON e.id_alumno = u.id
@@ -32,11 +35,11 @@ $sql = "SELECT e.id as entrega_id,
         LEFT JOIN entregas e2 ON e.id_alumno = e2.id_alumno AND e.id_actividad = e2.id_actividad
         WHERE c.id_tutor = '$tutor_id' 
         AND e.estado = 'pendiente'
-        GROUP BY e.id
+        GROUP BY e.id, u.nombre, u.email, a.titulo, a.tipo, a.dificultad, c.nombre, c.id, e.id_alumno, e.fecha_entrega, e.archivo, e.respuesta, ev.calificacion
         ORDER BY 
             CASE 
-                WHEN TIMESTAMPDIFF(HOUR, e.fecha_entrega, NOW()) > 48 THEN 1
-                WHEN TIMESTAMPDIFF(HOUR, e.fecha_entrega, NOW()) > 24 THEN 2
+                WHEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - e.fecha_entrega))/3600 > 48 THEN 1
+                WHEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - e.fecha_entrega))/3600 > 24 THEN 2
                 ELSE 3
             END,
             e.fecha_entrega ASC";
@@ -51,13 +54,56 @@ $entregas = [];
 
 if ($res) {
     $total_pendientes = mysqli_num_rows($res);
-    $entregas = mysqli_fetch_all($res, MYSQLI_ASSOC);
-    foreach ($entregas as $entrega) {
-        if ($entrega['horas_pasadas'] > 48) $urgentes++;
-        if ($entrega['horas_pasadas'] < 24) $recientes++;
+    $entregas = [];
+    while ($row = mysqli_fetch_assoc($res)) {
+        $entregas[] = $row;
+        if ($row['horas_pasadas'] > 48) $urgentes++;
+        if ($row['horas_pasadas'] < 24) $recientes++;
     }
     mysqli_data_seek($res, 0);
 }
+$res = mysqli_query($conn, $sql);
+
+// =============================================
+// CÓDIGO DE DEPURACIÓN - ELIMINAR DESPUÉS
+// =============================================
+if (!$res) {
+    echo "Error en la consulta: " . mysqli_error($conn);
+    exit();
+} else {
+    $num_rows = mysqli_num_rows($res);
+    echo "<!-- Debug: La consulta devolvió $num_rows filas -->";
+    
+    // Verificar si hay resultados
+    if ($num_rows == 0) {
+        echo "<div class='alert alert-warning'>No hay entregas pendientes. Verifica que existan entregas con estado 'pendiente' para el tutor ID: $tutor_id</div>";
+        
+        // Consulta para verificar si hay entregas en general
+        $sql_check = "SELECT COUNT(*) as total FROM entregas e 
+                      JOIN actividades a ON e.id_actividad = a.id 
+                      JOIN cursos c ON a.id_curso = c.id 
+                      WHERE c.id_tutor = '$tutor_id'";
+        $res_check = mysqli_query($conn, $sql_check);
+        if ($res_check) {
+            $row_check = mysqli_fetch_assoc($res_check);
+            echo "<!-- Debug: Total de entregas para este tutor: " . $row_check['total'] . " -->";
+        }
+        
+        // Verificar entregas con estado pendiente
+        $sql_check2 = "SELECT COUNT(*) as total FROM entregas e 
+                       JOIN actividades a ON e.id_actividad = a.id 
+                       JOIN cursos c ON a.id_curso = c.id 
+                       WHERE c.id_tutor = '$tutor_id' AND e.estado = 'pendiente'";
+        $res_check2 = mysqli_query($conn, $sql_check2);
+        if ($res_check2) {
+            $row_check2 = mysqli_fetch_assoc($res_check2);
+            echo "<!-- Debug: Entregas pendientes para este tutor: " . $row_check2['total'] . " -->";
+        }
+    }
+}
+// =============================================
+// FIN CÓDIGO DE DEPURACIÓN
+// =============================================
 
 // Función para obtener color según urgencia
 function getUrgenciaColor($horas) {

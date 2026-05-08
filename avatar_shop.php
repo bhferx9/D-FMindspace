@@ -38,7 +38,6 @@ $query_cursos_completados = "SELECT COUNT(*) as total
 $res_cursos_comp = mysqli_query($conn, $query_cursos_completados);
 $cursos_completados = mysqli_fetch_assoc($res_cursos_comp)['total'] ?? 0;
 
-
 // Consultar cursos en los que está inscrito
 $query_cursos = "SELECT c.nombre, c.descripcion, i.progreso, i.id_curso, c.nivel 
                  FROM inscripciones i 
@@ -50,7 +49,7 @@ $res_cursos = mysqli_query($conn, $query_cursos);
 $query_notif = "SELECT * FROM notificaciones WHERE id_usuario = '$alumno_id' AND leido = FALSE LIMIT 5";
 $res_notif = mysqli_query($conn, $query_notif);
 
-// CORREGIDO: Consultar actividades recientes con calificación desde tabla evaluaciones
+// Consultar actividades recientes con calificación desde tabla evaluaciones
 $query_actividades = "SELECT a.titulo, e.fecha_entrega, e.estado, ev.calificacion 
                       FROM entregas e 
                       JOIN actividades a ON e.id_actividad = a.id 
@@ -58,6 +57,7 @@ $query_actividades = "SELECT a.titulo, e.fecha_entrega, e.estado, ev.calificacio
                       WHERE e.id_alumno = '$alumno_id' 
                       ORDER BY e.fecha_entrega DESC LIMIT 4";
 $res_actividades = mysqli_query($conn, $query_actividades);
+
 // 4. Actividades con calificación 8+
 $query_calificaciones_altas = "SELECT COUNT(*) as total 
                               FROM entregas e 
@@ -235,37 +235,24 @@ $avatares = [
     ]
 ];
 
-// Obtener avatar actual del alumno
+// =============================================
+// CORREGIDO PARA POSTGRESQL - Obtener avatar actual
+// =============================================
 $avatar_actual = 'panda';
-$check_avatar_col = mysqli_query($conn, "SHOW COLUMNS FROM usuarios LIKE 'avatar'");
-
-if(mysqli_num_rows($check_avatar_col) > 0) {
-    $query_avatar = "SELECT avatar FROM usuarios WHERE id = '$alumno_id'";
-    $res_avatar = mysqli_query($conn, $query_avatar);
-    if($res_avatar && mysqli_num_rows($res_avatar) > 0) {
-        $avatar_data = mysqli_fetch_assoc($res_avatar);
-        $avatar_actual = $avatar_data['avatar'] ?: 'panda';
-    }
+$query_avatar = "SELECT COALESCE(avatar, 'panda') as avatar FROM usuarios WHERE id = '$alumno_id'";
+$res_avatar = mysqli_query($conn, $query_avatar);
+if($res_avatar && mysqli_num_rows($res_avatar) > 0) {
+    $avatar_data = mysqli_fetch_assoc($res_avatar);
+    $avatar_actual = $avatar_data['avatar'];
 }
 
-// Función para actualizar avatar del alumno
+// =============================================
+// CORREGIDO PARA POSTGRESQL - Función actualizar avatar
+// =============================================
 function actualizarAvatar($conn, $alumno_id, $nuevo_avatar) {
-    // Verificar si la columna avatar existe
-    $check_column = mysqli_query($conn, "SHOW COLUMNS FROM usuarios LIKE 'avatar'");
-    
-    if(mysqli_num_rows($check_column) > 0) {
-        // La columna existe, actualizar
-        $sql = "UPDATE usuarios SET avatar = '$nuevo_avatar' WHERE id = '$alumno_id'";
-        return mysqli_query($conn, $sql);
-    } else {
-        // La columna no existe, crearla primero
-        $sql_alter = "ALTER TABLE usuarios ADD COLUMN avatar VARCHAR(50) DEFAULT 'panda'";
-        mysqli_query($conn, $sql_alter);
-        
-        // Luego actualizar
-        $sql_update = "UPDATE usuarios SET avatar = '$nuevo_avatar' WHERE id = '$alumno_id'";
-        return mysqli_query($conn, $sql_update);
-    }
+    // Actualizar directamente (asumiendo que la columna existe)
+    $sql = "UPDATE usuarios SET avatar = '$nuevo_avatar' WHERE id = '$alumno_id'";
+    return mysqli_query($conn, $sql);
 }
 
 // Procesar cambio de avatar si se envió el formulario

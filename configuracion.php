@@ -8,24 +8,26 @@ if (!isset($_SESSION['user_id']) || $_SESSION['tipo'] != 'padre') {
     exit();
 }
 
-$id_padre = $_SESSION['user_id'];
+$id_padre = (int)$_SESSION['user_id'];
 
-// Obtener datos del padre desde la base de datos (nombre y email)
-$query_padre = "SELECT nombre, email FROM usuarios WHERE id = ? AND tipo = 'padre'";
-$stmt_padre = $conn->prepare($query_padre);
-$stmt_padre->bind_param("i", $id_padre);
-$stmt_padre->execute();
-$result_padre = $stmt_padre->get_result();
-
-if ($row_padre = $result_padre->fetch_assoc()) {
-    $nombre_padre = $row_padre['nombre'];
-    $email_padre = $row_padre['email'];
-} else {
-    // Si no se encuentra (raro), usar un fallback
+// Obtener datos del padre desde la base de datos (PDO)
+try {
+    $query_padre = "SELECT nombre, email FROM usuarios WHERE id = :id AND tipo = 'padre'";
+    $stmt_padre = $conn->pdo->prepare($query_padre);
+    $stmt_padre->execute([':id' => $id_padre]);
+    $row_padre = $stmt_padre->fetch(PDO::FETCH_ASSOC);
+    
+    if ($row_padre) {
+        $nombre_padre = $row_padre['nombre'];
+        $email_padre = $row_padre['email'];
+    } else {
+        $nombre_padre = 'Padre';
+        $email_padre = '';
+    }
+} catch(PDOException $e) {
     $nombre_padre = 'Padre';
     $email_padre = '';
 }
-$stmt_padre->close();
 
 // Iniciales para avatar
 $iniciales = '';
@@ -37,18 +39,20 @@ if (count($partes) >= 2) {
 }
 
 // Obtener hijos vinculados para mostrar códigos de vinculación
-$query_hijos = "
-    SELECT u.id, u.nombre, u.codigo_vinculacion
-    FROM vinculaciones v
-    JOIN usuarios u ON v.id_alumno = u.id
-    WHERE v.id_padre = ? AND v.estado = 'activo'
-    ORDER BY u.nombre
-";
-$stmt = $conn->prepare($query_hijos);
-$stmt->bind_param("i", $id_padre);
-$stmt->execute();
-$hijos = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$stmt->close();
+try {
+    $query_hijos = "
+        SELECT u.id, u.nombre, u.avatar, u.codigo_vinculacion
+        FROM vinculaciones v
+        JOIN usuarios u ON v.id_alumno = u.id
+        WHERE v.id_padre = :id_padre AND v.estado = 'activo'
+        ORDER BY u.nombre
+    ";
+    $stmt = $conn->pdo->prepare($query_hijos);
+    $stmt->execute([':id_padre' => $id_padre]);
+    $hijos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch(PDOException $e) {
+    $hijos = [];
+}
 
 // Procesar mensajes de éxito/error
 $mensaje = '';
@@ -62,32 +66,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $nuevo_email = trim($_POST['email'] ?? '');
         $password_actual = $_POST['password_actual'] ?? '';
 
-        // Verificar contraseña actual
-        $query = "SELECT password FROM usuarios WHERE id = ?";
-        $stmt = $conn->prepare($query);
-        $stmt->bind_param("i", $id_padre);
-        $stmt->execute();
-        $hash = $stmt->get_result()->fetch_assoc()['password'];
-        $stmt->close();
+        try {
+            // Verificar contraseña actual
+            $query = "SELECT password FROM usuarios WHERE id = :id";
+            $stmt = $conn->pdo->prepare($query);
+            $stmt->execute([':id' => $id_padre]);
+            $hash = $stmt->fetch(PDO::FETCH_ASSOC)['password'] ?? '';
 
-        if (password_verify($password_actual, $hash)) {
-            // Actualizar
-            $update = "UPDATE usuarios SET nombre = ?, email = ? WHERE id = ?";
-            $stmt = $conn->prepare($update);
-            $stmt->bind_param("ssi", $nuevo_nombre, $nuevo_email, $id_padre);
-            if ($stmt->execute()) {
-                $_SESSION['usuario_nombre'] = $nuevo_nombre;
-                $nombre_padre = $nuevo_nombre;
-                $email_padre = $nuevo_email;
-                $mensaje = "Perfil actualizado correctamente.";
-                $tipo_mensaje = 'success';
+            if (password_verify($password_actual, $hash)) {
+                // Actualizar
+                $update = "UPDATE usuarios SET nombre = :nombre, email = :email WHERE id = :id";
+                $stmt = $conn->pdo->prepare($update);
+                if ($stmt->execute([':nombre' => $nuevo_nombre, ':email' => $nuevo_email, ':id' => $id_padre])) {
+                    $_SESSION['nombre'] = $nuevo_nombre;
+                    $nombre_padre = $nuevo_nombre;
+                    $email_padre = $nuevo_email;
+                    $mensaje = "Perfil actualizado correctamente.";
+                    $tipo_mensaje = 'success';
+                    
+                    // Actualizar iniciales
+                    $partes = explode(' ', trim($nombre_padre));
+                    if (count($partes) >= 2) {
+                        $iniciales = strtoupper(substr($partes[0], 0, 1) . substr($partes[1], 0, 1));
+                    } else {
+                        $iniciales = strtoupper(substr($nombre_padre, 0, 2));
+                    }
+                } else {
+                    $mensaje = "Error al actualizar. El email podría estar en uso.";
+                    $tipo_mensaje = 'danger';
+                }
             } else {
-                $mensaje = "Error al actualizar. El email podría estar en uso.";
+                $mensaje = "Contraseña actual incorrecta.";
                 $tipo_mensaje = 'danger';
             }
-            $stmt->close();
-        } else {
-            $mensaje = "Contraseña actual incorrecta.";
+        } catch(PDOException $e) {
+            $mensaje = "Error: " . $e->getMessage();
             $tipo_mensaje = 'danger';
         }
     } elseif ($accion === 'cambiar_password') {
@@ -102,48 +115,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $mensaje = "La contraseña debe tener al menos 6 caracteres.";
             $tipo_mensaje = 'danger';
         } else {
-            $query = "SELECT password FROM usuarios WHERE id = ?";
-            $stmt = $conn->prepare($query);
-            $stmt->bind_param("i", $id_padre);
-            $stmt->execute();
-            $hash = $stmt->get_result()->fetch_assoc()['password'];
-            $stmt->close();
+            try {
+                $query = "SELECT password FROM usuarios WHERE id = :id";
+                $stmt = $conn->pdo->prepare($query);
+                $stmt->execute([':id' => $id_padre]);
+                $hash = $stmt->fetch(PDO::FETCH_ASSOC)['password'] ?? '';
 
-            if (password_verify($pass_actual, $hash)) {
-                $nuevo_hash = password_hash($nueva_pass, PASSWORD_DEFAULT);
-                $update = "UPDATE usuarios SET password = ? WHERE id = ?";
-                $stmt = $conn->prepare($update);
-                $stmt->bind_param("si", $nuevo_hash, $id_padre);
-                $stmt->execute();
-                $stmt->close();
-                $mensaje = "Contraseña cambiada exitosamente.";
-                $tipo_mensaje = 'success';
-            } else {
-                $mensaje = "Contraseña actual incorrecta.";
+                if (password_verify($pass_actual, $hash)) {
+                    $nuevo_hash = password_hash($nueva_pass, PASSWORD_DEFAULT);
+                    $update = "UPDATE usuarios SET password = :password WHERE id = :id";
+                    $stmt = $conn->pdo->prepare($update);
+                    $stmt->execute([':password' => $nuevo_hash, ':id' => $id_padre]);
+                    $mensaje = "Contraseña cambiada exitosamente.";
+                    $tipo_mensaje = 'success';
+                } else {
+                    $mensaje = "Contraseña actual incorrecta.";
+                    $tipo_mensaje = 'danger';
+                }
+            } catch(PDOException $e) {
+                $mensaje = "Error: " . $e->getMessage();
                 $tipo_mensaje = 'danger';
             }
         }
     } elseif ($accion === 'desvincular_hijo') {
         $id_hijo = intval($_POST['id_hijo'] ?? 0);
         if ($id_hijo > 0) {
-            $delete = "DELETE FROM vinculaciones WHERE id_padre = ? AND id_alumno = ?";
-            $stmt = $conn->prepare($delete);
-            $stmt->bind_param("ii", $id_padre, $id_hijo);
-            $stmt->execute();
-            $stmt->close();
-            $mensaje = "Hijo desvinculado correctamente.";
-            $tipo_mensaje = 'success';
-            // Refrescar lista de hijos
-            header("Location: configuracion.php?msg=desvinculado");
-            exit;
+            try {
+                $delete = "DELETE FROM vinculaciones WHERE id_padre = :id_padre AND id_alumno = :id_hijo";
+                $stmt = $conn->pdo->prepare($delete);
+                $stmt->execute([':id_padre' => $id_padre, ':id_hijo' => $id_hijo]);
+                $mensaje = "Hijo desvinculado correctamente.";
+                $tipo_mensaje = 'success';
+                // Refrescar lista de hijos
+                $stmt = $conn->pdo->prepare($query_hijos);
+                $stmt->execute([':id_padre' => $id_padre]);
+                $hijos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            } catch(PDOException $e) {
+                $mensaje = "Error: " . $e->getMessage();
+                $tipo_mensaje = 'danger';
+            }
         }
     }
-}
-
-// Mensaje por GET (después de desvincular)
-if (isset($_GET['msg']) && $_GET['msg'] === 'desvinculado') {
-    $mensaje = "Hijo desvinculado correctamente.";
-    $tipo_mensaje = 'success';
 }
 ?>
 <!DOCTYPE html>
@@ -1089,11 +1101,6 @@ if (isset($_GET['msg']) && $_GET['msg'] === 'desvinculado') {
         <div class="nav-item">
             <a href="dashboard_padre.php" class="nav-link">
                 <div class="icon"><i class="fas fa-users"></i></div><span>Mis hijos</span>
-            </a>
-        </div>
-        <div class="nav-item">
-            <a href="dashboard_padre_detalle.php" class="nav-link">
-                <div class="icon"><i class="fas fa-chart-line"></i></div><span>Visión general</span>
             </a>
         </div>
         <div class="nav-item">

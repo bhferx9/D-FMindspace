@@ -11,17 +11,28 @@ if (!isset($_SESSION['user_id']) || $_SESSION['tipo'] != 'alumno') {
 $alumno_id = $_SESSION['user_id'];
 $nombre_alumno = $_SESSION['nombre'];
 
-// Consultar cursos en los que está inscrito
-$query_cursos = "SELECT c.id, c.nombre, c.descripcion, i.progreso, c.nivel, c.duracion_horas, 
-                        c.id_tutor, u.nombre as tutor_nombre, COUNT(a.id) as total_actividades
-                 FROM inscripciones i 
-                 JOIN cursos c ON i.id_curso = c.id 
-                 LEFT JOIN usuarios u ON c.id_tutor = u.id
-                 LEFT JOIN actividades a ON c.id = a.id_curso
-                 WHERE i.id_alumno = '$alumno_id' AND i.estado = 'activo'
-                 GROUP BY c.id
-                 ORDER BY i.fecha_inscripcion DESC";
-$res_cursos = mysqli_query($conn, $query_cursos);
+// Consultar cursos en los que está inscrito (CORREGIDO PARA POSTGRESQL)
+// Consultar cursos en los que está inscrito - USANDO PDO DIRECTAMENTE
+try {
+    $stmt = $conn->pdo->prepare("
+        SELECT c.id, c.nombre, c.descripcion, i.progreso, c.nivel, c.duracion_horas, 
+               c.id_tutor, u.nombre as tutor_nombre, COUNT(a.id) as total_actividades
+        FROM inscripciones i 
+        JOIN cursos c ON i.id_curso = c.id 
+        LEFT JOIN usuarios u ON c.id_tutor = u.id
+        LEFT JOIN actividades a ON c.id = a.id_curso
+        WHERE i.id_alumno = :alumno_id AND i.estado = 'activo'
+        GROUP BY c.id, c.nombre, c.descripcion, i.progreso, c.nivel, c.duracion_horas, 
+                 c.id_tutor, u.nombre, i.fecha_inscripcion
+        ORDER BY i.fecha_inscripcion DESC
+    ");
+    $stmt->execute([':alumno_id' => $alumno_id]);
+    $cursos_data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $total_cursos = count($cursos_data);
+} catch(PDOException $e) {
+    $cursos_data = [];
+    $total_cursos = 0;
+}
 
 // Consultar actividades recientes
 $query_actividades = "SELECT a.titulo, a.id_curso, e.fecha_entrega, e.estado, ev.calificacion 
@@ -31,11 +42,37 @@ $query_actividades = "SELECT a.titulo, a.id_curso, e.fecha_entrega, e.estado, ev
                       WHERE e.id_alumno = '$alumno_id' 
                       ORDER BY e.fecha_entrega DESC LIMIT 5";
 $res_actividades = mysqli_query($conn, $query_actividades);
-
 // Calcular estadísticas
-$total_cursos = mysqli_num_rows($res_cursos);
 $progreso_promedio = 0;
 $total_actividades_completadas = 0;
+
+if ($total_cursos > 0) {
+    // Recorrer los cursos para calcular progreso y actividades completadas
+    foreach($cursos_data as $curso) {
+        $progreso_promedio += $curso['progreso'];
+        
+        // Contar actividades completadas para este curso
+        try {
+            $stmt_completadas = $conn->pdo->prepare("
+                SELECT COUNT(DISTINCT e.id_actividad) as completadas 
+                FROM entregas e 
+                JOIN actividades a ON e.id_actividad = a.id 
+                WHERE e.id_alumno = :alumno_id 
+                AND a.id_curso = :curso_id 
+                AND e.estado = 'calificado'
+            ");
+            $stmt_completadas->execute([
+                ':alumno_id' => $alumno_id,
+                ':curso_id' => $curso['id']
+            ]);
+            $completadas_data = $stmt_completadas->fetch(PDO::FETCH_ASSOC);
+            $total_actividades_completadas += $completadas_data['completadas'];
+        } catch(PDOException $e) {
+            // Error al contar, continuar
+        }
+    }
+    $progreso_promedio = round($progreso_promedio / $total_cursos);
+}
 
 if ($total_cursos > 0) {
     mysqli_data_seek($res_cursos, 0);
@@ -57,7 +94,7 @@ if ($total_cursos > 0) {
     $progreso_promedio = round($progreso_promedio / $total_cursos);
 }
 
-// Obtener avatar del alumno
+// Avatares disponibles
 $avatares = [
     'panda' => ['emoji' => '🐼', 'color' => '#3A506B', 'nivel' => 1],
     'dragon' => ['emoji' => '🐉', 'color' => '#FF6B6B', 'nivel' => 1],
@@ -69,11 +106,12 @@ $avatares = [
     'mago' => ['emoji' => '🧙‍♂️', 'color' => '#00C2A8', 'nivel' => 6]
 ];
 
-$check_avatar_col = mysqli_query($conn, "SHOW COLUMNS FROM usuarios LIKE 'avatar'");
+// CORREGIDO PARA POSTGRESQL - Verificar columna avatar
+$check_avatar_col = mysqli_query($conn, "SELECT column_name FROM information_schema.columns WHERE table_name='usuarios' AND column_name='avatar'");
 $avatar_key = 'panda';
 
 if(mysqli_num_rows($check_avatar_col) > 0) {
-    $query_avatar = "SELECT avatar FROM usuarios WHERE id = '$alumno_id'";
+    $query_avatar = "SELECT COALESCE(avatar, 'panda') as avatar FROM usuarios WHERE id = '$alumno_id'";
     $res_avatar = mysqli_query($conn, $query_avatar);
     if($res_avatar && mysqli_num_rows($res_avatar) > 0) {
         $avatar_data = mysqli_fetch_assoc($res_avatar);
@@ -1075,8 +1113,8 @@ $avatar_color = $avatares[$avatar_key]['color'];
                     <a href="mis_cursos.php" class="nav-link active">
                         <i class="fas fa-compass"></i>
                         <span>Mis Aventuras</span>
-                        <?php if(mysqli_num_rows($res_cursos) > 0): ?>
-                            <span class="badge-notification ms-auto"><?php echo mysqli_num_rows($res_cursos); ?></span>
+                        <?php if($total_cursos > 0): ?>
+                            <span class="badge-notification ms-auto"><?php echo $total_cursos; ?></span>
                         <?php endif; ?>
                     </a>
                 </li>
@@ -1147,32 +1185,31 @@ $avatar_color = $avatares[$avatar_key]['color'];
                 <div class="stat-value stat-value-success"><?php echo $progreso_promedio; ?>%</div>
                 <div class="stat-label">Progreso Promedio</div>
             </div>
-            <!-- Aquí continúa desde donde se quedó el código... -->
 
-        <div class="stat-card">
-            <div class="stat-icon stat-icon-warning">
-                <i class="fas fa-tasks"></i>
+            <div class="stat-card">
+                <div class="stat-icon stat-icon-warning">
+                    <i class="fas fa-tasks"></i>
+                </div>
+                <div class="stat-value stat-value-warning"><?php echo $total_actividades_completadas; ?></div>
+                <div class="stat-label">Misiones Completadas</div>
             </div>
-            <div class="stat-value stat-value-warning"><?php echo $total_actividades_completadas; ?></div>
-            <div class="stat-label">Misiones Completadas</div>
-        </div>
-        
-        <div class="stat-card">
-            <div class="stat-icon stat-icon-info">
-                <i class="fas fa-clock"></i>
-            </div>
-            <?php
-            // Calcular tiempo total estimado
-            mysqli_data_seek($res_cursos, 0);
-            $tiempo_total = 0;
-            if ($total_cursos > 0) {
-                while($curso = mysqli_fetch_assoc($res_cursos)) {
-                    $tiempo_total += $curso['duracion_horas'];
+            
+            <div class="stat-card">
+                <div class="stat-icon stat-icon-info">
+                    <i class="fas fa-clock"></i>
+                </div>
+                <?php
+                // Calcular tiempo total estimado
+                $tiempo_total = 0;
+                if ($total_cursos > 0) {
+                    foreach($cursos_data as $curso) {
+                        $tiempo_total += $curso['duracion_horas'];
+                    }
                 }
-            }
-            ?>
-            <div class="stat-value stat-value-info"><?php echo $tiempo_total; ?>h</div>
-            <div class="stat-label">Tiempo Total de Aventuras</div>
+                ?>
+                <div class="stat-value stat-value-info"><?php echo $tiempo_total; ?>h</div>
+                <div class="stat-label">Tiempo Total de Aventuras</div>
+            </div>
         </div>
     </div>
     
@@ -1184,10 +1221,10 @@ $avatar_color = $avatares[$avatar_key]['color'];
     </div>
     
     <!-- Grid de cursos -->
-    <?php if(mysqli_num_rows($res_cursos) > 0): ?>
+    <!-- Grid de cursos -->
+    <?php if($total_cursos > 0): ?>
         <div class="courses-grid fade-in-up" style="animation-delay: 0.3s">
             <?php 
-            mysqli_data_seek($res_cursos, 0);
             $course_colors = [
                 'var(--primary)', 
                 'var(--accent)', 
@@ -1200,7 +1237,7 @@ $avatar_color = $avatares[$avatar_key]['color'];
             ];
             $color_index = 0;
             
-            while($curso = mysqli_fetch_assoc($res_cursos)): 
+            foreach($cursos_data as $curso):
                 // Asignar color de forma cíclica
                 $course_color = $course_colors[$color_index % count($course_colors)];
                 $color_index++;
@@ -1268,7 +1305,7 @@ $avatar_color = $avatares[$avatar_key]['color'];
                     </div>
                 </div>
             </div>
-            <?php endwhile; ?>
+            <?php endforeach; ?>
         </div>
     <?php else: ?>
         <!-- Mensaje cuando no hay cursos -->
@@ -1299,16 +1336,8 @@ $avatar_color = $avatares[$avatar_key]['color'];
             <?php 
             mysqli_data_seek($res_actividades, 0);
             while($actividad = mysqli_fetch_assoc($res_actividades)): 
-                // Determinar estado y color
-                $status_class = '';
-                $status_text = '';
-                if($actividad['estado'] == 'calificado') {
-                    $status_class = 'status-completed';
-                    $status_text = 'Calificado';
-                } else {
-                    $status_class = 'status-pending';
-                    $status_text = 'Pendiente';
-                }
+                $status_text = ($actividad['estado'] == 'calificado') ? 'Calificado' : 'Pendiente';
+                $status_class = ($actividad['estado'] == 'calificado') ? 'status-completed' : 'status-pending';
             ?>
             <div class="activity-item">
                 <div class="activity-icon">
