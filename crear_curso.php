@@ -19,10 +19,10 @@ $nombre_curso = '';
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     // Validar y sanitizar datos
-    $nombre = mysqli_real_escape_string($conn, trim($_POST['nombre']));
-    $desc = mysqli_real_escape_string($conn, trim($_POST['descripcion']));
-    $nivel = mysqli_real_escape_string($conn, $_POST['nivel']);
-    $duracion = intval($_POST['duracion']);
+    $nombre = trim($_POST['nombre'] ?? '');
+    $desc = trim($_POST['descripcion'] ?? '');
+    $nivel = $_POST['nivel'] ?? 'Básico';
+    $duracion = intval($_POST['duracion'] ?? 0);
     
     // Validaciones adicionales
     if (empty($nombre) || strlen($nombre) < 3) {
@@ -30,17 +30,27 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     } elseif ($duracion < 1 || $duracion > 1000) {
         $error = "La duración debe estar entre 1 y 1000 horas.";
     } else {
-        // Insertar en la base de datos - SOLO COLUMNAS EXISTENTES
-        $sql = "INSERT INTO cursos (nombre, descripcion, nivel, duracion_horas, id_tutor, fecha_creacion, activo) 
-                VALUES ('$nombre', '$desc', '$nivel', '$duracion', '$tutor_id', NOW(), 1)";
-        
-        if (mysqli_query($conn, $sql)) {
-            $curso_id = mysqli_insert_id($conn);
+        try {
+            // Insertar en la base de datos usando PDO
+            $sql = "INSERT INTO cursos (nombre, descripcion, nivel, duracion_horas, id_tutor, fecha_creacion, activo) 
+                    VALUES (:nombre, :descripcion, :nivel, :duracion, :tutor_id, CURRENT_TIMESTAMP, TRUE)";
+            
+            $stmt = $conn->pdo->prepare($sql);
+            $stmt->execute([
+                ':nombre' => $nombre,
+                ':descripcion' => $desc,
+                ':nivel' => $nivel,
+                ':duracion' => $duracion,
+                ':tutor_id' => $tutor_id
+            ]);
+            
+            $curso_id = $conn->pdo->lastInsertId();
             $success = true;
             $curso_creado = true;
             $nombre_curso = $nombre;
-        } else {
-            $error = "Error al crear el curso: " . mysqli_error($conn);
+            
+        } catch(PDOException $e) {
+            $error = "Error al crear el curso: " . $e->getMessage();
         }
     }
 }

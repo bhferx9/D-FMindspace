@@ -7,92 +7,120 @@ if (!isset($_SESSION['user_id']) || $_SESSION['tipo'] != 'tutor') {
     exit();
 }
 
-$tutor_id = $_SESSION['user_id'];
+$tutor_id = (int)$_SESSION['user_id'];
 $tutor_nombre = $_SESSION['nombre'];
 
 // Obtener parámetros de filtro
-$curso_filtro = isset($_GET['curso_id']) ? intval($_GET['curso_id']) : 0;
+$curso_filtro = isset($_GET['curso_id']) ? (int)$_GET['curso_id'] : 0;
 $estado_filtro = isset($_GET['estado']) ? $_GET['estado'] : '';
 
-// Consulta para obtener cursos del tutor (para filtro)
-$sql_cursos = "SELECT id, nombre FROM cursos WHERE id_tutor = '$tutor_id' ORDER BY nombre ASC";
-$res_cursos = mysqli_query($conn, $sql_cursos);
-
-// Consulta principal CON LA ESTRUCTURA CORRECTA DE TU BASE DE DATOS
-$sql = "SELECT 
-            u.id as alumno_id,
-            u.nombre as alumno_nombre,
-            u.email as alumno_email,
-            u.fecha_nacimiento,
-            u.fecha_registro,
-            c.id as curso_id,
-            c.nombre as curso_nombre,
-            c.nivel as curso_nivel,
-            p.porcentaje,
-            p.actividades_completadas,
-            i.estado as estado_inscripcion,
-            i.fecha_inscripcion,
-            i.progreso as progreso_inscripcion,
-            -- Contar tareas pendientes para este alumno en este curso
-            (SELECT COUNT(*) FROM entregas e 
-             JOIN actividades a ON e.id_actividad = a.id 
-             WHERE e.id_alumno = u.id AND a.id_curso = c.id AND e.estado = 'pendiente') as tareas_pendientes,
-            -- Contar tareas calificadas para este alumno en este curso
-            (SELECT COUNT(*) FROM entregas e 
-             JOIN actividades a ON e.id_actividad = a.id 
-             WHERE e.id_alumno = u.id AND a.id_curso = c.id AND e.estado = 'calificado') as tareas_calificadas,
-            -- Obtener la última calificación si existe
-            (SELECT ev.calificacion FROM evaluaciones ev
-             JOIN entregas en ON ev.id_entrega = en.id
-             WHERE en.id_alumno = u.id 
-             AND en.id_actividad IN (SELECT id FROM actividades WHERE id_curso = c.id)
-             ORDER BY ev.fecha_evaluacion DESC LIMIT 1) as ultima_calificacion
-        FROM usuarios u
-        JOIN inscripciones i ON u.id = i.id_alumno
-        JOIN cursos c ON i.id_curso = c.id
-        LEFT JOIN progreso p ON (u.id = p.id_alumno AND c.id = p.id_curso)
-        WHERE c.id_tutor = '$tutor_id' 
-        AND u.tipo = 'alumno'";
-
-// Aplicar filtros
-if ($curso_filtro > 0) {
-    $sql .= " AND c.id = $curso_filtro";
-}
-
-if ($estado_filtro == 'completado') {
-    $sql .= " AND p.porcentaje >= 100";
-} elseif ($estado_filtro == 'en_progreso') {
-    $sql .= " AND p.porcentaje < 100 AND p.porcentaje > 0";
-} elseif ($estado_filtro == 'nuevo') {
-    $sql .= " AND (p.porcentaje IS NULL OR p.porcentaje = 0)";
-}
-
-$sql .= " ORDER BY c.nombre ASC, p.porcentaje DESC, u.nombre ASC";
-
-$res = mysqli_query($conn, $sql);
-
-// Obtener estadísticas generales
-$sql_stats = "SELECT 
-                COUNT(DISTINCT u.id) as total_alumnos,
-                COUNT(DISTINCT c.id) as total_cursos,
-                AVG(p.porcentaje) as promedio_progreso,
-                SUM(CASE WHEN p.porcentaje >= 100 THEN 1 ELSE 0 END) as completados,
-                SUM(CASE WHEN p.porcentaje < 100 AND p.porcentaje > 0 THEN 1 ELSE 0 END) as en_progreso,
-                SUM(CASE WHEN p.porcentaje = 0 OR p.porcentaje IS NULL THEN 1 ELSE 0 END) as nuevos,
-                -- Tareas pendientes de calificar
+try {
+    // Consulta para obtener cursos del tutor (para filtro)
+    $stmt_cursos = $conn->pdo->prepare("SELECT id, nombre FROM cursos WHERE id_tutor = :tutor_id ORDER BY nombre ASC");
+    $stmt_cursos->execute([':tutor_id' => $tutor_id]);
+    $cursos = $stmt_cursos->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Consulta principal con la estructura correcta
+    $sql = "SELECT 
+                u.id as alumno_id,
+                u.nombre as alumno_nombre,
+                u.email as alumno_email,
+                u.fecha_nacimiento,
+                u.fecha_registro,
+                c.id as curso_id,
+                c.nombre as curso_nombre,
+                c.nivel as curso_nivel,
+                p.porcentaje,
+                p.actividades_completadas,
+                i.estado as estado_inscripcion,
+                i.fecha_inscripcion,
+                i.progreso as progreso_inscripcion,
+                -- Contar tareas pendientes
                 (SELECT COUNT(*) FROM entregas e 
                  JOIN actividades a ON e.id_actividad = a.id 
-                 JOIN cursos c2 ON a.id_curso = c2.id
-                 WHERE e.estado = 'pendiente' AND c2.id_tutor = '$tutor_id') as tareas_pendientes_totales
-              FROM usuarios u
-              JOIN inscripciones i ON u.id = i.id_alumno
-              JOIN cursos c ON i.id_curso = c.id
-              LEFT JOIN progreso p ON (u.id = p.id_alumno AND c.id = p.id_curso)
-              WHERE c.id_tutor = '$tutor_id' 
-              AND u.tipo = 'alumno'";
-
-$res_stats = mysqli_query($conn, $sql_stats);
-$stats = mysqli_fetch_assoc($res_stats);
+                 WHERE e.id_alumno = u.id AND a.id_curso = c.id AND e.estado = 'pendiente') as tareas_pendientes,
+                -- Contar tareas calificadas
+                (SELECT COUNT(*) FROM entregas e 
+                 JOIN actividades a ON e.id_actividad = a.id 
+                 WHERE e.id_alumno = u.id AND a.id_curso = c.id AND e.estado = 'calificado') as tareas_calificadas,
+                -- Obtener la última calificación
+                (SELECT ev.calificacion FROM evaluaciones ev
+                 JOIN entregas en ON ev.id_entrega = en.id
+                 WHERE en.id_alumno = u.id 
+                 AND en.id_actividad IN (SELECT id FROM actividades WHERE id_curso = c.id)
+                 ORDER BY ev.fecha_evaluacion DESC LIMIT 1) as ultima_calificacion
+            FROM usuarios u
+            JOIN inscripciones i ON u.id = i.id_alumno
+            JOIN cursos c ON i.id_curso = c.id
+            LEFT JOIN progreso p ON (u.id = p.id_alumno AND c.id = p.id_curso)
+            WHERE c.id_tutor = :tutor_id 
+            AND u.tipo = 'alumno'";
+    
+    // Aplicar filtros
+    if ($curso_filtro > 0) {
+        $sql .= " AND c.id = :curso_id";
+    }
+    
+    if ($estado_filtro == 'completado') {
+        $sql .= " AND p.porcentaje >= 100";
+    } elseif ($estado_filtro == 'en_progreso') {
+        $sql .= " AND p.porcentaje < 100 AND p.porcentaje > 0";
+    } elseif ($estado_filtro == 'nuevo') {
+        $sql .= " AND (p.porcentaje IS NULL OR p.porcentaje = 0)";
+    }
+    
+    $sql .= " ORDER BY c.nombre ASC, p.porcentaje DESC, u.nombre ASC";
+    
+    // Ejecutar consulta principal
+    $stmt = $conn->pdo->prepare($sql);
+    $params = [':tutor_id' => $tutor_id];
+    if ($curso_filtro > 0) {
+        $params[':curso_id'] = $curso_filtro;
+    }
+    $stmt->execute($params);
+    $alumnos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Obtener estadísticas generales
+    $sql_stats = "SELECT 
+                    COUNT(DISTINCT u.id) as total_alumnos,
+                    COUNT(DISTINCT c.id) as total_cursos,
+                    AVG(p.porcentaje) as promedio_progreso,
+                    SUM(CASE WHEN p.porcentaje >= 100 THEN 1 ELSE 0 END) as completados,
+                    SUM(CASE WHEN p.porcentaje < 100 AND p.porcentaje > 0 THEN 1 ELSE 0 END) as en_progreso,
+                    SUM(CASE WHEN p.porcentaje = 0 OR p.porcentaje IS NULL THEN 1 ELSE 0 END) as nuevos,
+                    -- Tareas pendientes de calificar
+                    (SELECT COUNT(*) FROM entregas e 
+                     JOIN actividades a ON e.id_actividad = a.id 
+                     JOIN cursos c2 ON a.id_curso = c2.id
+                     WHERE e.estado = 'pendiente' AND c2.id_tutor = :tutor_id2) as tareas_pendientes_totales
+                  FROM usuarios u
+                  JOIN inscripciones i ON u.id = i.id_alumno
+                  JOIN cursos c ON i.id_curso = c.id
+                  LEFT JOIN progreso p ON (u.id = p.id_alumno AND c.id = p.id_curso)
+                  WHERE c.id_tutor = :tutor_id3 
+                  AND u.tipo = 'alumno'";
+    
+    $stmt_stats = $conn->pdo->prepare($sql_stats);
+    $stmt_stats->execute([
+        ':tutor_id2' => $tutor_id,
+        ':tutor_id3' => $tutor_id
+    ]);
+    $stats = $stmt_stats->fetch(PDO::FETCH_ASSOC);
+    
+} catch(PDOException $e) {
+    error_log("Error en reporte_alumnos.php: " . $e->getMessage());
+    $alumnos = [];
+    $cursos = [];
+    $stats = [
+        'total_alumnos' => 0,
+        'total_cursos' => 0,
+        'promedio_progreso' => 0,
+        'completados' => 0,
+        'en_progreso' => 0,
+        'nuevos' => 0,
+        'tareas_pendientes_totales' => 0
+    ];
+}
 ?>
 
 <!DOCTYPE html>
@@ -699,14 +727,11 @@ $stats = mysqli_fetch_assoc($res_stats);
                     <label class="form-label fw-bold">Filtrar por Aventura</label>
                     <select name="curso_id" class="form-select">
                         <option value="0">Todas las Aventuras</option>
-                        <?php 
-                        mysqli_data_seek($res_cursos, 0); // Reiniciar el puntero del resultado
-                        while($curso = mysqli_fetch_assoc($res_cursos)): 
-                        ?>
+                        <?php foreach($cursos as $curso): ?>
                         <option value="<?php echo $curso['id']; ?>" <?php echo $curso_filtro == $curso['id'] ? 'selected' : ''; ?>>
                             <?php echo htmlspecialchars($curso['nombre']); ?>
                         </option>
-                        <?php endwhile; ?>
+                        <?php endforeach; ?>
                     </select>
                 </div>
                 
@@ -737,7 +762,7 @@ $stats = mysqli_fetch_assoc($res_stats);
                 <h4 class="mb-0 fw-bold"><i class="fas fa-list-ul me-2"></i> Detalle de Exploradores</h4>
                 <p class="mb-0 opacity-75">
                     <?php 
-                    $total_registros = mysqli_num_rows($res);
+                    $total_registros = count($alumnos);
                     echo $total_registros . ($total_registros == 1 ? ' registro encontrado' : ' registros encontrados');
                     ?>
                 </p>
@@ -756,9 +781,9 @@ $stats = mysqli_fetch_assoc($res_stats);
                         </tr>
                     </thead>
                     <tbody>
-                        <?php if(mysqli_num_rows($res) > 0): ?>
-                            <?php while($row = mysqli_fetch_assoc($res)): 
-                                // Calcular edad a partir de fecha_nacimiento
+                        <?php if(count($alumnos) > 0): ?>
+                            <?php foreach($alumnos as $row): 
+                                // Calcular edad
                                 $edad = '';
                                 if ($row['fecha_nacimiento']) {
                                     $fecha_nac = new DateTime($row['fecha_nacimiento']);
@@ -766,7 +791,7 @@ $stats = mysqli_fetch_assoc($res_stats);
                                     $edad = $hoy->diff($fecha_nac)->y;
                                 }
                                 
-                                // Obtener iniciales para el avatar
+                                // Obtener iniciales para avatar
                                 $iniciales = '';
                                 $nombre_parts = explode(' ', $row['alumno_nombre']);
                                 if (count($nombre_parts) >= 2) {
@@ -776,9 +801,13 @@ $stats = mysqli_fetch_assoc($res_stats);
                                 }
                                 
                                 // Obtener actividades totales del curso
-                                $sql_total_actividades = "SELECT COUNT(*) as total FROM actividades WHERE id_curso = " . $row['curso_id'];
-                                $res_total = mysqli_query($conn, $sql_total_actividades);
-                                $total_actividades = mysqli_fetch_assoc($res_total)['total'];
+                                try {
+                                    $stmt_total = $conn->pdo->prepare("SELECT COUNT(*) as total FROM actividades WHERE id_curso = :id_curso");
+                                    $stmt_total->execute([':id_curso' => $row['curso_id']]);
+                                    $total_actividades = $stmt_total->fetch(PDO::FETCH_ASSOC)['total'];
+                                } catch(PDOException $e) {
+                                    $total_actividades = 0;
+                                }
                                 
                                 $misiones_completadas = $row['actividades_completadas'] ?? 0;
                                 $misiones_pendientes = $total_actividades - $misiones_completadas;
@@ -786,11 +815,12 @@ $stats = mysqli_fetch_assoc($res_stats);
                                 // Determinar color de progreso
                                 $porcentaje = $row['porcentaje'] ?? 0;
                                 $progress_color = $porcentaje >= 100 ? 'bg-success' : 
-                                                 ($porcentaje >= 70 ? 'bg-info' : 
-                                                 ($porcentaje >= 40 ? 'bg-warning' : 'bg-primary'));
+                                                ($porcentaje >= 70 ? 'bg-info' : 
+                                                ($porcentaje >= 40 ? 'bg-warning' : 'bg-primary'));
                                 
                                 // Determinar badge de estado
                                 $estado_badge = '';
+                                $estado_text = '';
                                 if ($porcentaje >= 100) {
                                     $estado_badge = 'badge-completed';
                                     $estado_text = '🏆 Completado';
@@ -853,11 +883,11 @@ $stats = mysqli_fetch_assoc($res_stats);
                                     <div class="progress-container">
                                         <div class="progress">
                                             <div class="progress-bar progress-animated <?php echo $progress_color; ?>" 
-                                                 style="width: <?php echo $porcentaje; ?>%"
-                                                 role="progressbar"
-                                                 aria-valuenow="<?php echo $porcentaje; ?>"
-                                                 aria-valuemin="0"
-                                                 aria-valuemax="100">
+                                                style="width: <?php echo $porcentaje; ?>%"
+                                                role="progressbar"
+                                                aria-valuenow="<?php echo $porcentaje; ?>"
+                                                aria-valuemin="0"
+                                                aria-valuemax="100">
                                             </div>
                                         </div>
                                         <span class="fw-bold"><?php echo round($porcentaje); ?>%</span>
@@ -879,23 +909,23 @@ $stats = mysqli_fetch_assoc($res_stats);
                                 <td>
                                     <div class="d-flex gap-2 flex-wrap">
                                         <a href="detalle_alumno.php?alumno_id=<?php echo $row['alumno_id']; ?>&curso_id=<?php echo $row['curso_id']; ?>" 
-                                           class="btn-action btn-view">
+                                        class="btn-action btn-view">
                                             <i class="fas fa-eye"></i> Ver
                                         </a>
                                         <?php if($row['tareas_pendientes'] > 0): ?>
                                         <a href="revisar_entregas.php?alumno_id=<?php echo $row['alumno_id']; ?>&curso_id=<?php echo $row['curso_id']; ?>" 
-                                           class="btn-action btn-calificar">
+                                        class="btn-action btn-calificar">
                                             <i class="fas fa-star"></i> Calificar (<?php echo $row['tareas_pendientes']; ?>)
                                         </a>
                                         <?php endif; ?>
                                         <a href="detalle_entregas.php?alumno_id=<?php echo $row['alumno_id']; ?>&curso_id=<?php echo $row['curso_id']; ?>" 
-                                           class="btn-action btn-tareas">
+                                        class="btn-action btn-tareas">
                                             <i class="fas fa-tasks"></i> Tareas
                                         </a>
                                     </div>
                                 </td>
                             </tr>
-                            <?php endwhile; ?>
+                            <?php endforeach; ?>
                         <?php else: ?>
                             <tr>
                                 <td colspan="6">

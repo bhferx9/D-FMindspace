@@ -7,35 +7,41 @@ if (!isset($_SESSION['user_id']) || $_SESSION['tipo'] != 'tutor') {
     exit();
 }
 
-$tutor_id = $_SESSION['user_id'];
+$tutor_id = (int)$_SESSION['user_id'];
 
 if (isset($_GET['id']) && is_numeric($_GET['id'])) {
-    $activity_id = intval($_GET['id']);
+    $activity_id = (int)$_GET['id'];
     
-    // Verificar que la actividad pertenezca a un curso del tutor
-    $sql = "SELECT a.*, c.id_tutor 
+    try {
+        // Verificar que la actividad pertenezca a un curso del tutor
+        $stmt = $conn->pdo->prepare("
+            SELECT a.*, c.id_tutor 
             FROM actividades a
             JOIN cursos c ON a.id_curso = c.id
-            WHERE a.id = '$activity_id' AND c.id_tutor = '$tutor_id'";
-    
-    $result = mysqli_query($conn, $sql);
-    
-    if (mysqli_num_rows($result) > 0) {
-        $activity = mysqli_fetch_assoc($result);
-        echo json_encode([
-            'success' => true,
-            'id' => $activity['id'],
-            'titulo' => $activity['titulo'],
-            'descripcion' => $activity['descripcion'],
-            'tipo' => $activity['tipo'],
-            'dificultad' => $activity['dificultad'],
-            'fecha_limite' => $activity['fecha_limite'],
-            'puntos' => $activity['puntos'],
-            'id_curso' => $activity['id_curso']
-        ]);
-    } else {
-        echo json_encode(['success' => false, 'message' => 'Actividad no encontrada']);
+            WHERE a.id = :activity_id AND c.id_tutor = :tutor_id
+        ");
+        $stmt->execute([':activity_id' => $activity_id, ':tutor_id' => $tutor_id]);
+        
+        if ($stmt->rowCount() > 0) {
+            $activity = $stmt->fetch(PDO::FETCH_ASSOC);
+            echo json_encode([
+                'success' => true,
+                'id' => $activity['id'],
+                'titulo' => $activity['titulo'],
+                'descripcion' => $activity['descripcion'],
+                'tipo' => $activity['tipo'],
+                'dificultad' => $activity['dificultad'],
+                'fecha_limite' => $activity['fecha_limite'],
+                'puntos' => $activity['puntos'],
+                'id_curso' => $activity['id_curso']
+            ]);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Actividad no encontrada']);
+        }
+    } catch(PDOException $e) {
+        echo json_encode(['success' => false, 'message' => 'Error en la base de datos: ' . $e->getMessage()]);
     }
 } else {
     echo json_encode(['success' => false, 'message' => 'ID inválido']);
 }
+?>

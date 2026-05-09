@@ -11,115 +11,162 @@ $tutor_id = $_SESSION['user_id'];
 $alumno_id = isset($_GET['alumno_id']) ? intval($_GET['alumno_id']) : 0;
 $curso_filtro = isset($_GET['curso_id']) ? intval($_GET['curso_id']) : 0;
 
-// Verificar que el alumno esté inscrito en un curso del tutor
-$sql_verificar = "SELECT u.* 
-                  FROM usuarios u
-                  JOIN inscripciones i ON u.id = i.id_alumno
-                  JOIN cursos c ON i.id_curso = c.id
-                  WHERE u.id = '$alumno_id' 
-                  AND u.tipo = 'alumno'
-                  AND c.id_tutor = '$tutor_id'";
-                  
-if ($curso_filtro > 0) {
-    $sql_verificar .= " AND c.id = '$curso_filtro'";
-}
-
-$result_verificar = mysqli_query($conn, $sql_verificar);
-
-if (mysqli_num_rows($result_verificar) == 0) {
+if ($alumno_id <= 0) {
     header("Location: reporte_alumnos.php");
     exit();
 }
 
-$alumno = mysqli_fetch_assoc($result_verificar);
+// Verificar que el alumno esté inscrito en un curso del tutor
+try {
+    $sql_verificar = "SELECT u.* 
+                      FROM usuarios u
+                      JOIN inscripciones i ON u.id = i.id_alumno
+                      JOIN cursos c ON i.id_curso = c.id
+                      WHERE u.id = :alumno_id 
+                      AND u.tipo = 'alumno'
+                      AND c.id_tutor = :tutor_id";
+                      
+    if ($curso_filtro > 0) {
+        $sql_verificar .= " AND c.id = :curso_id";
+    }
+    
+    $stmt = $conn->pdo->prepare($sql_verificar);
+    $params = [':alumno_id' => $alumno_id, ':tutor_id' => $tutor_id];
+    if ($curso_filtro > 0) {
+        $params[':curso_id'] = $curso_filtro;
+    }
+    $stmt->execute($params);
+    
+    if ($stmt->rowCount() == 0) {
+        header("Location: reporte_alumnos.php");
+        exit();
+    }
+    
+    $alumno = $stmt->fetch(PDO::FETCH_ASSOC);
+} catch(PDOException $e) {
+    header("Location: reporte_alumnos.php");
+    exit();
+}
 
 // Obtener cursos del alumno donde el tutor es el profesor
-$sql_cursos_alumno = "SELECT c.id, c.nombre, i.fecha_inscripcion, i.progreso, i.estado
-                      FROM cursos c
-                      JOIN inscripciones i ON c.id = i.id_curso
-                      WHERE i.id_alumno = '$alumno_id'
-                      AND c.id_tutor = '$tutor_id'
-                      ORDER BY c.nombre ASC";
-$res_cursos_alumno = mysqli_query($conn, $sql_cursos_alumno);
+try {
+    $stmt = $conn->pdo->prepare("
+        SELECT c.id, c.nombre, i.fecha_inscripcion, i.progreso, i.estado
+        FROM cursos c
+        JOIN inscripciones i ON c.id = i.id_curso
+        WHERE i.id_alumno = :alumno_id
+        AND c.id_tutor = :tutor_id
+        ORDER BY c.nombre ASC
+    ");
+    $stmt->execute([':alumno_id' => $alumno_id, ':tutor_id' => $tutor_id]);
+    $cursos_alumno = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch(PDOException $e) {
+    $cursos_alumno = [];
+}
 
 // Obtener estadísticas del alumno
-$sql_estadisticas = "SELECT 
-                    COUNT(DISTINCT i.id_curso) as total_cursos,
-                    AVG(p.porcentaje) as promedio_general,
-                    SUM(CASE WHEN i.estado = 'activo' THEN 1 ELSE 0 END) as cursos_activos,
-                    SUM(CASE WHEN i.estado = 'completado' THEN 1 ELSE 0 END) as cursos_completados
-                    FROM inscripciones i
-                    LEFT JOIN progreso p ON i.id_alumno = p.id_alumno AND i.id_curso = p.id_curso
-                    WHERE i.id_alumno = '$alumno_id'
-                    AND EXISTS (SELECT 1 FROM cursos c WHERE c.id = i.id_curso AND c.id_tutor = '$tutor_id')";
-$res_estadisticas = mysqli_query($conn, $sql_estadisticas);
-$estadisticas = mysqli_fetch_assoc($res_estadisticas);
+try {
+    $stmt = $conn->pdo->prepare("
+        SELECT 
+            COUNT(DISTINCT i.id_curso) as total_cursos,
+            COALESCE(AVG(p.porcentaje), 0) as promedio_general,
+            SUM(CASE WHEN i.estado = 'activo' THEN 1 ELSE 0 END) as cursos_activos,
+            SUM(CASE WHEN i.estado = 'completado' THEN 1 ELSE 0 END) as cursos_completados
+        FROM inscripciones i
+        LEFT JOIN progreso p ON i.id_alumno = p.id_alumno AND i.id_curso = p.id_curso
+        WHERE i.id_alumno = :alumno_id
+        AND EXISTS (SELECT 1 FROM cursos c WHERE c.id = i.id_curso AND c.id_tutor = :tutor_id)
+    ");
+    $stmt->execute([':alumno_id' => $alumno_id, ':tutor_id' => $tutor_id]);
+    $estadisticas = $stmt->fetch(PDO::FETCH_ASSOC);
+} catch(PDOException $e) {
+    $estadisticas = ['total_cursos' => 0, 'promedio_general' => 0, 'cursos_activos' => 0, 'cursos_completados' => 0];
+}
+
+// Variables para datos específicos del curso
+$stats_curso = null;
+$curso_info = null;
 
 // Si hay un curso filtrado, obtener actividades y entregas de ese curso específico
 if ($curso_filtro > 0) {
     // Verificar que el alumno esté inscrito en ese curso
-    $sql_check_curso = "SELECT 1 FROM inscripciones 
-                       WHERE id_alumno = '$alumno_id' 
-                       AND id_curso = '$curso_filtro'";
-    $check_curso = mysqli_query($conn, $sql_check_curso);
-    
-    if (mysqli_num_rows($check_curso) == 0) {
-        // Si no está inscrito, redirigir sin filtro de curso
-        header("Location: detalle_alumno.php?alumno=$alumno_id");
-        exit();
+    try {
+        $stmt = $conn->pdo->prepare("SELECT 1 FROM inscripciones WHERE id_alumno = :alumno_id AND id_curso = :curso_id");
+        $stmt->execute([':alumno_id' => $alumno_id, ':curso_id' => $curso_filtro]);
+        
+        if ($stmt->rowCount() == 0) {
+            header("Location: detalle_alumno.php?alumno_id=$alumno_id");
+            exit();
+        }
+        
+        // Obtener información del curso filtrado
+        $stmt = $conn->pdo->prepare("SELECT c.* FROM cursos c WHERE c.id = :curso_id");
+        $stmt->execute([':curso_id' => $curso_filtro]);
+        $curso_info = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Obtener estadísticas del curso específico
+        $stmt = $conn->pdo->prepare("
+            SELECT 
+                COUNT(DISTINCT a.id) as total_actividades,
+                SUM(CASE WHEN e.id IS NOT NULL THEN 1 ELSE 0 END) as entregas_realizadas,
+                SUM(CASE WHEN e.estado = 'calificado' THEN 1 ELSE 0 END) as entregas_calificadas,
+                AVG(CASE WHEN e.estado = 'calificado' THEN ev.calificacion ELSE NULL END) as promedio_curso
+            FROM actividades a
+            LEFT JOIN entregas e ON a.id = e.id_actividad AND e.id_alumno = :alumno_id
+            LEFT JOIN evaluaciones ev ON e.id = ev.id_entrega
+            WHERE a.id_curso = :curso_id
+        ");
+        $stmt->execute([':alumno_id' => $alumno_id, ':curso_id' => $curso_filtro]);
+        $stats_curso = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Obtener actividades del curso filtrado
+        $stmt = $conn->pdo->prepare("
+            SELECT a.*, 
+                   e.id as entrega_id, 
+                   e.estado as estado_entrega,
+                   e.fecha_entrega,
+                   ev.calificacion,
+                   ev.comentarios
+            FROM actividades a
+            LEFT JOIN entregas e ON a.id = e.id_actividad AND e.id_alumno = :alumno_id
+            LEFT JOIN evaluaciones ev ON e.id = ev.id_entrega
+            WHERE a.id_curso = :curso_id
+            ORDER BY a.fecha_limite ASC
+        ");
+        $stmt->execute([':alumno_id' => $alumno_id, ':curso_id' => $curso_filtro]);
+        $actividades = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+    } catch(PDOException $e) {
+        $actividades = [];
+        $stats_curso = null;
     }
-    
-    // Obtener actividades del curso filtrado
-    $sql_actividades = "SELECT a.*, 
-                       e.id as entrega_id, 
-                       e.estado as estado_entrega,
-                       e.fecha_entrega,
-                       ev.calificacion,
-                       ev.comentarios
-                       FROM actividades a
-                       LEFT JOIN entregas e ON a.id = e.id_actividad AND e.id_alumno = '$alumno_id'
-                       LEFT JOIN evaluaciones ev ON e.id = ev.id_entrega
-                       WHERE a.id_curso = '$curso_filtro'
-                       ORDER BY a.fecha_limite ASC";
-    
-    // Obtener información del curso filtrado
-    $sql_curso_info = "SELECT c.* FROM cursos c WHERE c.id = '$curso_filtro'";
-    $res_curso_info = mysqli_query($conn, $sql_curso_info);
-    $curso_info = mysqli_fetch_assoc($res_curso_info);
-    
-    // Obtener estadísticas del curso específico
-    $sql_stats_curso = "SELECT 
-                       COUNT(DISTINCT a.id) as total_actividades,
-                       SUM(CASE WHEN e.id IS NOT NULL THEN 1 ELSE 0 END) as entregas_realizadas,
-                       SUM(CASE WHEN e.estado = 'calificado' THEN 1 ELSE 0 END) as entregas_calificadas,
-                       AVG(CASE WHEN e.estado = 'calificado' THEN ev.calificacion ELSE NULL END) as promedio_curso
-                       FROM actividades a
-                       LEFT JOIN entregas e ON a.id = e.id_actividad AND e.id_alumno = '$alumno_id'
-                       LEFT JOIN evaluaciones ev ON e.id = ev.id_entrega
-                       WHERE a.id_curso = '$curso_filtro'";
-    $res_stats_curso = mysqli_query($conn, $sql_stats_curso);
-    $stats_curso = mysqli_fetch_assoc($res_stats_curso);
 } else {
     // Obtener todas las actividades de todos los cursos del tutor
-    $sql_actividades = "SELECT a.*, 
-                       c.nombre as curso_nombre,
-                       e.id as entrega_id, 
-                       e.estado as estado_entrega,
-                       e.fecha_entrega,
-                       ev.calificacion,
-                       ev.comentarios
-                       FROM actividades a
-                       JOIN cursos c ON a.id_curso = c.id
-                       LEFT JOIN entregas e ON a.id = e.id_actividad AND e.id_alumno = '$alumno_id'
-                       LEFT JOIN evaluaciones ev ON e.id = ev.id_entrega
-                       WHERE c.id_tutor = '$tutor_id'
-                       AND EXISTS (SELECT 1 FROM inscripciones i WHERE i.id_alumno = '$alumno_id' AND i.id_curso = c.id)
-                       ORDER BY c.nombre, a.fecha_limite ASC";
+    try {
+        $stmt = $conn->pdo->prepare("
+            SELECT a.*, 
+                   c.nombre as curso_nombre,
+                   e.id as entrega_id, 
+                   e.estado as estado_entrega,
+                   e.fecha_entrega,
+                   ev.calificacion,
+                   ev.comentarios
+            FROM actividades a
+            JOIN cursos c ON a.id_curso = c.id
+            LEFT JOIN entregas e ON a.id = e.id_actividad AND e.id_alumno = :alumno_id
+            LEFT JOIN evaluaciones ev ON e.id = ev.id_entrega
+            WHERE c.id_tutor = :tutor_id
+            AND EXISTS (SELECT 1 FROM inscripciones i WHERE i.id_alumno = :alumno_id AND i.id_curso = c.id)
+            ORDER BY c.nombre, a.fecha_limite ASC
+        ");
+        $stmt->execute([':alumno_id' => $alumno_id, ':tutor_id' => $tutor_id]);
+        $actividades = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch(PDOException $e) {
+        $actividades = [];
+    }
 }
 
-$res_actividades = mysqli_query($conn, $sql_actividades);
-
-// Función para obtener color según el estado
+// Funciones auxiliares (sin cambios)
 function getEstadoColor($estado) {
     $colores = [
         'pendiente' => 'warning',
@@ -131,7 +178,6 @@ function getEstadoColor($estado) {
     return $colores[$estado] ?? 'secondary';
 }
 
-// Función para obtener icono según el tipo de actividad
 function getActividadIcono($tipo) {
     $iconos = [
         'Quiz' => 'fas fa-question-circle',
@@ -144,7 +190,6 @@ function getActividadIcono($tipo) {
     return $iconos[$tipo] ?? 'fas fa-tasks';
 }
 
-// Función para obtener color de calificación
 function getCalificacionColor($calificacion) {
     if ($calificacion >= 9) return 'success';
     if ($calificacion >= 7) return 'info';
@@ -152,7 +197,6 @@ function getCalificacionColor($calificacion) {
     return 'danger';
 }
 
-// Función para obtener progreso en texto
 function getProgresoTexto($porcentaje) {
     if ($porcentaje >= 90) return 'Excelente';
     if ($porcentaje >= 70) return 'Bueno';
@@ -868,26 +912,24 @@ function getProgresoTexto($porcentaje) {
             </div>
             <div class="filter-buttons">
                 <a href="detalle_alumno.php?alumno_id=<?php echo $alumno_id; ?>" 
-                   class="filter-btn <?php echo $curso_filtro == 0 ? 'active' : ''; ?>">
+                class="filter-btn <?php echo $curso_filtro == 0 ? 'active' : ''; ?>">
                     <i class="fas fa-layer-group"></i>
                     Todos los Cursos
                 </a>
                 
-                <?php 
-                mysqli_data_seek($res_cursos_alumno, 0);
-                while($curso = mysqli_fetch_assoc($res_cursos_alumno)): 
+                <?php foreach($cursos_alumno as $curso): 
                     $es_activo = $curso_filtro == $curso['id'];
                     $color_progreso = $curso['progreso'] >= 70 ? 'var(--accent)' : ($curso['progreso'] >= 40 ? 'var(--primary)' : 'var(--danger)');
                 ?>
                     <a href="detalle_alumno.php?alumno_id=<?php echo $alumno_id; ?>&curso_id=<?php echo $curso['id']; ?>" 
-                       class="filter-btn <?php echo $es_activo ? 'active' : ''; ?>">
+                    class="filter-btn <?php echo $es_activo ? 'active' : ''; ?>">
                         <i class="fas fa-book"></i>
                         <?php echo htmlspecialchars($curso['nombre']); ?>
                         <span class="badge" style="background: <?php echo $color_progreso; ?>">
                             <?php echo $curso['progreso']; ?>%
                         </span>
                     </a>
-                <?php endwhile; ?>
+                <?php endforeach; ?>
             </div>
         </div>
         
@@ -971,134 +1013,134 @@ function getProgresoTexto($porcentaje) {
             <?php endif; ?>
         </h2>
         
-        <?php if(mysqli_num_rows($res_actividades) > 0): ?>
-            <div class="activities-grid">
-                <?php while($act = mysqli_fetch_assoc($res_actividades)): 
-                    $icono = getActividadIcono($act['tipo']);
-                    $estado_color = getEstadoColor($act['estado_entrega'] ?? 'no_entregado');
-                    $estado_texto = $act['estado_entrega'] ?? 'No entregado';
-                    $calificacion_color = isset($act['calificacion']) ? getCalificacionColor($act['calificacion']) : '';
+        <?php if(count($actividades) > 0): ?>
+        <div class="activities-grid">
+            <?php foreach($actividades as $act): 
+                $icono = getActividadIcono($act['tipo']);
+                $estado_color = getEstadoColor($act['estado_entrega'] ?? 'no_entregado');
+                $estado_texto = $act['estado_entrega'] ?? 'No entregado';
+                $calificacion_color = isset($act['calificacion']) ? getCalificacionColor($act['calificacion']) : '';
+                
+                // Verificar si la actividad está vencida
+                $fecha_limite = new DateTime($act['fecha_limite']);
+                $hoy = new DateTime();
+                $esta_vencida = $fecha_limite < $hoy && ($act['estado_entrega'] == null || $act['estado_entrega'] == 'pendiente');
+            ?>
+                <div class="activity-card animate__animated animate__fadeInUp">
+                    <?php if($curso_filtro == 0): ?>
+                        <span class="course-badge">
+                            <i class="fas fa-book me-2"></i><?php echo htmlspecialchars($act['curso_nombre'] ?? 'Curso'); ?>
+                        </span>
+                    <?php endif; ?>
                     
-                    // Verificar si la actividad está vencida
-                    $fecha_limite = new DateTime($act['fecha_limite']);
-                    $hoy = new DateTime();
-                    $esta_vencida = $fecha_limite < $hoy && ($act['estado_entrega'] == null || $act['estado_entrega'] == 'pendiente');
-                ?>
-                    <div class="activity-card animate__animated animate__fadeInUp">
-                        <?php if($curso_filtro == 0): ?>
-                            <span class="course-badge">
-                                <i class="fas fa-book me-2"></i><?php echo htmlspecialchars($act['curso_nombre'] ?? 'Curso'); ?>
+                    <div class="activity-header">
+                        <div>
+                            <h3 class="activity-title"><?php echo htmlspecialchars($act['titulo']); ?></h3>
+                            <span class="activity-type">
+                                <i class="<?php echo str_replace('fas fa-', '', $icono); ?> me-2"></i>
+                                <?php echo htmlspecialchars($act['tipo']); ?>
+                            </span>
+                        </div>
+                        <?php if($esta_vencida): ?>
+                            <span class="status-badge status-no_entregado">
+                                <i class="fas fa-clock"></i> Vencida
                             </span>
                         <?php endif; ?>
-                        
-                        <div class="activity-header">
-                            <div>
-                                <h3 class="activity-title"><?php echo htmlspecialchars($act['titulo']); ?></h3>
-                                <span class="activity-type">
-                                    <i class="<?php echo str_replace('fas fa-', '', $icono); ?> me-2"></i>
-                                    <?php echo htmlspecialchars($act['tipo']); ?>
-                                </span>
-                            </div>
-                            <?php if($esta_vencida): ?>
-                                <span class="status-badge status-no_entregado">
-                                    <i class="fas fa-clock"></i> Vencida
+                    </div>
+                    
+                    <?php if(!empty($act['descripcion'])): ?>
+                        <p class="activity-description"><?php echo htmlspecialchars(substr($act['descripcion'], 0, 150)); ?><?php echo strlen($act['descripcion']) > 150 ? '...' : ''; ?></p>
+                    <?php endif; ?>
+                    
+                    <div class="d-flex justify-content-between text-muted mb-3">
+                        <div>
+                            <i class="fas fa-calendar-alt me-1"></i>
+                            <?php echo date('d/m/Y', strtotime($act['fecha_limite'])); ?>
+                        </div>
+                        <div>
+                            <i class="fas fa-trophy me-1"></i>
+                            <?php echo $act['puntos']; ?> XP
+                        </div>
+                    </div>
+                    
+                    <!-- Información de entrega -->
+                    <div class="delivery-info">
+                        <div class="delivery-status">
+                            <span class="status-badge status-<?php echo $estado_color; ?>">
+                                <i class="fas fa-<?php echo $estado_color == 'success' ? 'check-circle' : ($estado_color == 'warning' ? 'clock' : ($estado_color == 'danger' ? 'times-circle' : 'paper-plane')); ?>"></i>
+                                <?php echo ucfirst($estado_texto); ?>
+                            </span>
+                            
+                            <?php if($act['fecha_entrega']): ?>
+                                <span class="ms-auto">
+                                    <i class="fas fa-paper-plane me-1"></i>
+                                    <?php echo date('d/m/Y H:i', strtotime($act['fecha_entrega'])); ?>
                                 </span>
                             <?php endif; ?>
                         </div>
                         
-                        <?php if(!empty($act['descripcion'])): ?>
-                            <p class="activity-description"><?php echo htmlspecialchars(substr($act['descripcion'], 0, 150)); ?><?php echo strlen($act['descripcion']) > 150 ? '...' : ''; ?></p>
-                        <?php endif; ?>
-                        
-                        <div class="d-flex justify-content-between text-muted mb-3">
-                            <div>
-                                <i class="fas fa-calendar-alt me-1"></i>
-                                <?php echo date('d/m/Y', strtotime($act['fecha_limite'])); ?>
-                            </div>
-                            <div>
-                                <i class="fas fa-trophy me-1"></i>
-                                <?php echo $act['puntos']; ?> XP
-                            </div>
-                        </div>
-                        
-                        <!-- Información de entrega -->
-                        <div class="delivery-info">
-                            <div class="delivery-status">
-                                <span class="status-badge status-<?php echo $estado_color; ?>">
-                                    <i class="fas fa-<?php echo $estado_color == 'success' ? 'check-circle' : ($estado_color == 'warning' ? 'clock' : ($estado_color == 'danger' ? 'times-circle' : 'paper-plane')); ?>"></i>
-                                    <?php echo ucfirst($estado_texto); ?>
-                                </span>
-                                
-                                <?php if($act['fecha_entrega']): ?>
-                                    <span class="ms-auto">
-                                        <i class="fas fa-paper-plane me-1"></i>
-                                        <?php echo date('d/m/Y H:i', strtotime($act['fecha_entrega'])); ?>
-                                    </span>
-                                <?php endif; ?>
+                        <?php if(isset($act['calificacion'])): ?>
+                            <div class="grade-display grade-<?php echo $calificacion_color; ?>">
+                                <?php echo number_format($act['calificacion'], 1); ?>
                             </div>
                             
-                            <?php if(isset($act['calificacion'])): ?>
-                                <div class="grade-display grade-<?php echo $calificacion_color; ?>">
-                                    <?php echo number_format($act['calificacion'], 1); ?>
-                                </div>
-                                
-                                <?php if(!empty($act['comentarios'])): ?>
-                                    <div class="mt-3">
-                                        <strong><i class="fas fa-comment me-2"></i>Comentarios:</strong>
-                                        <p class="mb-0 mt-1"><?php echo htmlspecialchars($act['comentarios']); ?></p>
-                                    </div>
-                                <?php endif; ?>
-                            <?php elseif($act['estado_entrega'] == 'pendiente'): ?>
-                                <div class="text-center py-3">
-                                    <i class="fas fa-clock fa-2x text-warning mb-2"></i>
-                                    <p class="mb-0">Esperando calificación</p>
-                                </div>
-                            <?php elseif($act['estado_entrega'] == null): ?>
-                                <div class="text-center py-3">
-                                    <i class="fas fa-times-circle fa-2x text-danger mb-2"></i>
-                                    <p class="mb-0">No ha entregado esta actividad</p>
+                            <?php if(!empty($act['comentarios'])): ?>
+                                <div class="mt-3">
+                                    <strong><i class="fas fa-comment me-2"></i>Comentarios:</strong>
+                                    <p class="mb-0 mt-1"><?php echo htmlspecialchars($act['comentarios']); ?></p>
                                 </div>
                             <?php endif; ?>
-                        </div>
-                        
-                        <?php if($act['entrega_id']): ?>
-                            <a href="ver_entrega.php?id=<?php echo $act['entrega_id']; ?>" 
-                               class="btn-ver-entrega">
-                                <i class="fas fa-eye"></i> Ver Entrega Completa
-                            </a>
-                        <?php elseif($esta_vencida): ?>
-                            <button class="btn-ver-entrega" style="background: linear-gradient(90deg, var(--danger), #ff4757);" disabled>
-                                <i class="fas fa-clock"></i> Actividad Vencida
-                            </button>
-                        <?php else: ?>
-                            <button class="btn-ver-entrega" style="background: linear-gradient(90deg, #999, #777);" disabled>
-                                <i class="fas fa-ban"></i> Sin Entrega
-                            </button>
+                        <?php elseif($act['estado_entrega'] == 'pendiente'): ?>
+                            <div class="text-center py-3">
+                                <i class="fas fa-clock fa-2x text-warning mb-2"></i>
+                                <p class="mb-0">Esperando calificación</p>
+                            </div>
+                        <?php elseif($act['estado_entrega'] == null): ?>
+                            <div class="text-center py-3">
+                                <i class="fas fa-times-circle fa-2x text-danger mb-2"></i>
+                                <p class="mb-0">No ha entregado esta actividad</p>
+                            </div>
                         <?php endif; ?>
                     </div>
-                <?php endwhile; ?>
-            </div>
-        <?php else: ?>
-            <div class="no-activities animate__animated animate__fadeIn">
-                <div class="no-activities-icon">
-                    <i class="fas fa-tasks"></i>
+                    
+                    <?php if($act['entrega_id']): ?>
+                        <a href="ver_entrega.php?id=<?php echo $act['entrega_id']; ?>" 
+                        class="btn-ver-entrega">
+                            <i class="fas fa-eye"></i> Ver Entrega Completa
+                        </a>
+                    <?php elseif($esta_vencida): ?>
+                        <button class="btn-ver-entrega" style="background: linear-gradient(90deg, var(--danger), #ff4757);" disabled>
+                            <i class="fas fa-clock"></i> Actividad Vencida
+                        </button>
+                    <?php else: ?>
+                        <button class="btn-ver-entrega" style="background: linear-gradient(90deg, #999, #777);" disabled>
+                            <i class="fas fa-ban"></i> Sin Entrega
+                        </button>
+                    <?php endif; ?>
                 </div>
-                <h3>
-                    <?php if($curso_filtro > 0): ?>
-                        ¡No hay actividades en este curso!
-                    <?php else: ?>
-                        ¡No hay actividades disponibles!
-                    <?php endif; ?>
-                </h3>
-                <p>
-                    <?php if($curso_filtro > 0): ?>
-                        Este curso aún no tiene actividades asignadas. Crea algunas misiones para este explorador.
-                    <?php else: ?>
-                        Este alumno no tiene actividades asignadas en tus cursos.
-                    <?php endif; ?>
-                </p>
+            <?php endforeach; ?>
+        </div>
+    <?php else: ?>
+        <div class="no-activities animate__animated animate__fadeIn">
+            <div class="no-activities-icon">
+                <i class="fas fa-tasks"></i>
             </div>
-        <?php endif; ?>
+            <h3>
+                <?php if($curso_filtro > 0): ?>
+                    ¡No hay actividades en este curso!
+                <?php else: ?>
+                    ¡No hay actividades disponibles!
+                <?php endif; ?>
+            </h3>
+            <p>
+                <?php if($curso_filtro > 0): ?>
+                    Este curso aún no tiene actividades asignadas. Crea algunas misiones para este explorador.
+                <?php else: ?>
+                    Este alumno no tiene actividades asignadas en tus cursos.
+                <?php endif; ?>
+            </p>
+        </div>
+    <?php endif; ?>
     </div>
     
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>

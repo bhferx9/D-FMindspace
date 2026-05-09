@@ -8,7 +8,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['tipo'] != 'alumno') {
     exit();
 }
 
-$alumno_id = $_SESSION['user_id'];
+$alumno_id = (int)$_SESSION['user_id'];
 $nombre_alumno = $_SESSION['nombre'];
 
 // Obtener ID del curso desde la URL
@@ -17,23 +17,35 @@ if (!isset($_GET['id'])) {
     exit();
 }
 
-$curso_id = $_GET['id'];
+$curso_id = (int)$_GET['id'];
 
-// Verificar que el alumno está inscrito en este curso
-$sql_verificar = "SELECT i.*, c.nombre, c.descripcion, c.nivel, c.duracion_horas 
-                  FROM inscripciones i 
-                  JOIN cursos c ON i.id_curso = c.id 
-                  WHERE i.id_alumno = '$alumno_id' 
-                  AND i.id_curso = '$curso_id' 
-                  AND i.estado = 'activo'";
-$res_verificar = mysqli_query($conn, $sql_verificar);
-
-if (mysqli_num_rows($res_verificar) == 0) {
+if ($curso_id <= 0) {
     header("Location: mis_cursos.php");
     exit();
 }
 
-$curso_data = mysqli_fetch_assoc($res_verificar);
+// Verificar que el alumno está inscrito en este curso
+try {
+    $sql_verificar = "SELECT i.*, c.nombre, c.descripcion, c.nivel, c.duracion_horas, i.progreso
+                      FROM inscripciones i 
+                      JOIN cursos c ON i.id_curso = c.id 
+                      WHERE i.id_alumno = :alumno_id 
+                      AND i.id_curso = :curso_id 
+                      AND i.estado = 'activo'";
+    $stmt = $conn->pdo->prepare($sql_verificar);
+    $stmt->execute([':alumno_id' => $alumno_id, ':curso_id' => $curso_id]);
+    
+    if ($stmt->rowCount() == 0) {
+        header("Location: mis_cursos.php");
+        exit();
+    }
+    
+    $curso_data = $stmt->fetch(PDO::FETCH_ASSOC);
+} catch(PDOException $e) {
+    header("Location: mis_cursos.php");
+    exit();
+}
+
 $curso_nombre = $curso_data['nombre'];
 $curso_descripcion = $curso_data['descripcion'];
 $curso_nivel = $curso_data['nivel'];
@@ -41,87 +53,123 @@ $curso_duracion = $curso_data['duracion_horas'];
 $progreso_curso = $curso_data['progreso'];
 
 // Obtener tutor del curso
-$sql_tutor = "SELECT u.nombre, u.email 
-              FROM usuarios u 
-              JOIN cursos c ON u.id = c.id_tutor 
-              WHERE c.id = '$curso_id'";
-$res_tutor = mysqli_query($conn, $sql_tutor);
-$tutor_data = mysqli_fetch_assoc($res_tutor);
-
-// Obtener todas las actividades del curso
-$sql_actividades = "SELECT * FROM actividades 
-                    WHERE id_curso = '$curso_id' 
-                    ORDER BY fecha_limite ASC";
-$res_actividades = mysqli_query($conn, $sql_actividades);
-$total_actividades = mysqli_num_rows($res_actividades);
-
-// Obtener actividades completadas del alumno
-$sql_completadas = "SELECT COUNT(DISTINCT e.id_actividad) as completadas 
-                    FROM entregas e 
-                    JOIN actividades a ON e.id_actividad = a.id 
-                    WHERE e.id_alumno = '$alumno_id' 
-                    AND a.id_curso = '$curso_id' 
-                    AND e.estado = 'calificado'";
-$res_completadas = mysqli_query($conn, $sql_completadas);
-$completadas_data = mysqli_fetch_assoc($res_completadas);
-$actividades_completadas = $completadas_data['completadas'];
-
-// Obtener estadísticas de calificaciones
-$sql_calificaciones = "SELECT ev.calificacion 
-                       FROM entregas e 
-                       JOIN evaluaciones ev ON e.id = ev.id_entrega 
-                       JOIN actividades a ON e.id_actividad = a.id 
-                       WHERE e.id_alumno = '$alumno_id' 
-                       AND a.id_curso = '$curso_id' 
-                       AND ev.calificacion IS NOT NULL";
-$res_calificaciones = mysqli_query($conn, $sql_calificaciones);
-
-$total_calificaciones = 0;
-$suma_calificaciones = 0;
-$calificaciones_array = [];
-
-while ($cal = mysqli_fetch_assoc($res_calificaciones)) {
-    $suma_calificaciones += $cal['calificacion'];
-    $total_calificaciones++;
-    $calificaciones_array[] = $cal['calificacion'];
+try {
+    $sql_tutor = "SELECT u.nombre, u.email 
+                  FROM usuarios u 
+                  JOIN cursos c ON u.id = c.id_tutor 
+                  WHERE c.id = :curso_id";
+    $stmt = $conn->pdo->prepare($sql_tutor);
+    $stmt->execute([':curso_id' => $curso_id]);
+    $tutor_data = $stmt->fetch(PDO::FETCH_ASSOC);
+} catch(PDOException $e) {
+    $tutor_data = ['nombre' => 'No disponible', 'email' => 'No disponible'];
 }
 
-$promedio_calificaciones = $total_calificaciones > 0 ? round($suma_calificaciones / $total_calificaciones, 1) : 0;
+// Obtener todas las actividades del curso
+try {
+    $sql_actividades = "SELECT * FROM actividades 
+                        WHERE id_curso = :curso_id 
+                        ORDER BY fecha_limite ASC";
+    $stmt = $conn->pdo->prepare($sql_actividades);
+    $stmt->execute([':curso_id' => $curso_id]);
+    $actividades = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $total_actividades = count($actividades);
+} catch(PDOException $e) {
+    $actividades = [];
+    $total_actividades = 0;
+}
 
-// Calcular máxima y mínima calificación
-$max_calificacion = !empty($calificaciones_array) ? max($calificaciones_array) : 0;
-$min_calificacion = !empty($calificaciones_array) ? min($calificaciones_array) : 0;
+// Obtener actividades completadas del alumno
+try {
+    $sql_completadas = "SELECT COUNT(DISTINCT e.id_actividad) as completadas 
+                        FROM entregas e 
+                        JOIN actividades a ON e.id_actividad = a.id 
+                        WHERE e.id_alumno = :alumno_id 
+                        AND a.id_curso = :curso_id 
+                        AND e.estado = 'calificado'";
+    $stmt = $conn->pdo->prepare($sql_completadas);
+    $stmt->execute([':alumno_id' => $alumno_id, ':curso_id' => $curso_id]);
+    $completadas_data = $stmt->fetch(PDO::FETCH_ASSOC);
+    $actividades_completadas = $completadas_data['completadas'];
+} catch(PDOException $e) {
+    $actividades_completadas = 0;
+}
+
+// Obtener estadísticas de calificaciones
+try {
+    $sql_calificaciones = "SELECT ev.calificacion 
+                           FROM entregas e 
+                           JOIN evaluaciones ev ON e.id = ev.id_entrega 
+                           JOIN actividades a ON e.id_actividad = a.id 
+                           WHERE e.id_alumno = :alumno_id 
+                           AND a.id_curso = :curso_id 
+                           AND ev.calificacion IS NOT NULL";
+    $stmt = $conn->pdo->prepare($sql_calificaciones);
+    $stmt->execute([':alumno_id' => $alumno_id, ':curso_id' => $curso_id]);
+    $calificaciones = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    $total_calificaciones = count($calificaciones);
+    $suma_calificaciones = 0;
+    $calificaciones_array = [];
+
+    foreach ($calificaciones as $cal) {
+        $suma_calificaciones += $cal['calificacion'];
+        $calificaciones_array[] = $cal['calificacion'];
+    }
+
+    $promedio_calificaciones = $total_calificaciones > 0 ? round($suma_calificaciones / $total_calificaciones, 1) : 0;
+    $max_calificacion = !empty($calificaciones_array) ? max($calificaciones_array) : 0;
+    $min_calificacion = !empty($calificaciones_array) ? min($calificaciones_array) : 0;
+} catch(PDOException $e) {
+    $total_calificaciones = 0;
+    $promedio_calificaciones = 0;
+    $max_calificacion = 0;
+    $min_calificacion = 0;
+}
 
 // Obtener puntos totales ganados en este curso
-$sql_puntos = "SELECT SUM(a.puntos) as puntos_totales 
-               FROM entregas e 
-               JOIN actividades a ON e.id_actividad = a.id 
-               WHERE e.id_alumno = '$alumno_id' 
-               AND a.id_curso = '$curso_id' 
-               AND e.estado = 'calificado'";
-$res_puntos = mysqli_query($conn, $sql_puntos);
-$puntos_data = mysqli_fetch_assoc($res_puntos);
-$puntos_totales = $puntos_data['puntos_totales'] ?? 0;
+try {
+    $sql_puntos = "SELECT COALESCE(SUM(a.puntos), 0) as puntos_totales 
+                   FROM entregas e 
+                   JOIN actividades a ON e.id_actividad = a.id 
+                   WHERE e.id_alumno = :alumno_id 
+                   AND a.id_curso = :curso_id 
+                   AND e.estado = 'calificado'";
+    $stmt = $conn->pdo->prepare($sql_puntos);
+    $stmt->execute([':alumno_id' => $alumno_id, ':curso_id' => $curso_id]);
+    $puntos_data = $stmt->fetch(PDO::FETCH_ASSOC);
+    $puntos_totales = $puntos_data['puntos_totales'] ?? 0;
+} catch(PDOException $e) {
+    $puntos_totales = 0;
+}
 
 // Obtener fechas importantes del curso
-$sql_fechas = "SELECT MIN(fecha_limite) as primera_fecha, MAX(fecha_limite) as ultima_fecha 
-               FROM actividades 
-               WHERE id_curso = '$curso_id'";
-$res_fechas = mysqli_query($conn, $sql_fechas);
-$fechas_data = mysqli_fetch_assoc($res_fechas);
+try {
+    $sql_fechas = "SELECT MIN(fecha_limite) as primera_fecha, MAX(fecha_limite) as ultima_fecha 
+                   FROM actividades 
+                   WHERE id_curso = :curso_id";
+    $stmt = $conn->pdo->prepare($sql_fechas);
+    $stmt->execute([':curso_id' => $curso_id]);
+    $fechas_data = $stmt->fetch(PDO::FETCH_ASSOC);
+} catch(PDOException $e) {
+    $fechas_data = ['primera_fecha' => null, 'ultima_fecha' => null];
+}
 
-// Obtener actividades próximas a vencer (en los próximos 7 días)
-$hoy = date('Y-m-d');
-$proxima_semana = date('Y-m-d', strtotime('+7 days'));
+// Obtener actividades próximas a vencer
+try {
+    $sql_proximas = "SELECT * FROM actividades 
+                     WHERE id_curso = :curso_id 
+                     AND fecha_limite BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
+                     ORDER BY fecha_limite ASC 
+                     LIMIT 5";
+    $stmt = $conn->pdo->prepare($sql_proximas);
+    $stmt->execute([':curso_id' => $curso_id]);
+    $proximas_actividades = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch(PDOException $e) {
+    $proximas_actividades = [];
+}
 
-$sql_proximas = "SELECT * FROM actividades 
-                 WHERE id_curso = '$curso_id' 
-                 AND fecha_limite BETWEEN '$hoy' AND '$proxima_semana'
-                 ORDER BY fecha_limite ASC 
-                 LIMIT 5";
-$res_proximas = mysqli_query($conn, $sql_proximas);
-
-// Obtener avatar del alumno
+// Avatares disponibles
 $avatares = [
     'panda' => ['emoji' => '🐼', 'color' => '#3A506B', 'nivel' => 1],
     'dragon' => ['emoji' => '🐉', 'color' => '#FF6B6B', 'nivel' => 1],
@@ -133,16 +181,15 @@ $avatares = [
     'mago' => ['emoji' => '🧙‍♂️', 'color' => '#00C2A8', 'nivel' => 6]
 ];
 
-$check_avatar_col = mysqli_query($conn, "SHOW COLUMNS FROM usuarios LIKE 'avatar'");
-$avatar_key = 'panda';
-
-if(mysqli_num_rows($check_avatar_col) > 0) {
-    $query_avatar = "SELECT avatar FROM usuarios WHERE id = '$alumno_id'";
-    $res_avatar = mysqli_query($conn, $query_avatar);
-    if($res_avatar && mysqli_num_rows($res_avatar) > 0) {
-        $avatar_data = mysqli_fetch_assoc($res_avatar);
-        $avatar_key = $avatar_data['avatar'] ?: 'panda';
-    }
+// Obtener avatar del alumno
+try {
+    $query_avatar = "SELECT COALESCE(avatar, 'panda') as avatar FROM usuarios WHERE id = :alumno_id";
+    $stmt = $conn->pdo->prepare($query_avatar);
+    $stmt->execute([':alumno_id' => $alumno_id]);
+    $avatar_data = $stmt->fetch(PDO::FETCH_ASSOC);
+    $avatar_key = $avatar_data['avatar'] ?? 'panda';
+} catch(PDOException $e) {
+    $avatar_key = 'panda';
 }
 
 if(!isset($avatares[$avatar_key])) {

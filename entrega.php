@@ -1,4 +1,3 @@
-
 <?php
 include 'php/config.php';
 session_start();
@@ -8,84 +7,93 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 
-$alumno_id = $_SESSION['user_id'];
+$alumno_id = (int)$_SESSION['user_id'];
+$alumno_nombre = $_SESSION['nombre'] ?? 'Explorador';
 $modo_ver_entrega = false;
 
-// DETECTAR QUÉ MODO USAR
-// Modo 1: Ver curso completo (viene con ?id=)
-// Modo 2: Ver entrega específica (viene con ?id_actividad=)
-if (isset($_GET['id_actividad']) && isset($_GET['id_alumno'])) {
-    $modo_ver_entrega = true;
-    $id_actividad = $_GET['id_actividad'];
-    $id_alumno_entrega = $_GET['id_alumno'];
-    
-    // Verificar que el alumno sea el mismo de la sesión
-    if ($id_alumno_entrega != $alumno_id) {
-        header("Location: index.php");
-        exit();
-    }
-    
-    // Obtener el curso a partir de la actividad
-    $sql_curso_id = "SELECT id_curso FROM actividades WHERE id = '$id_actividad'";
-    $res_curso_id = mysqli_query($conn, $sql_curso_id);
-    
-    if (!$res_curso_id || mysqli_num_rows($res_curso_id) == 0) {
+try {
+    // DETECTAR QUÉ MODO USAR
+    // Modo 1: Ver curso completo (viene con ?id=)
+    // Modo 2: Ver entrega específica (viene con ?id_actividad=)
+    if (isset($_GET['id_actividad']) && isset($_GET['id_alumno'])) {
+        $modo_ver_entrega = true;
+        $id_actividad = (int)$_GET['id_actividad'];
+        $id_alumno_entrega = (int)$_GET['id_alumno'];
+        
+        // Verificar que el alumno sea el mismo de la sesión
+        if ($id_alumno_entrega != $alumno_id) {
+            header("Location: index.php");
+            exit();
+        }
+        
+        // Obtener el curso a partir de la actividad
+        $stmt = $conn->pdo->prepare("SELECT id_curso FROM actividades WHERE id = :id_actividad");
+        $stmt->execute([':id_actividad' => $id_actividad]);
+        
+        if ($stmt->rowCount() == 0) {
+            header("Location: mis_cursos.php");
+            exit();
+        }
+        
+        $curso_data = $stmt->fetch(PDO::FETCH_ASSOC);
+        $id_curso = $curso_data['id_curso'];
+        
+        // Obtener la entrega específica
+        $stmt = $conn->pdo->prepare("
+            SELECT e.*, ev.calificacion, ev.comentarios, ev.fecha_evaluacion
+            FROM entregas e 
+            LEFT JOIN evaluaciones ev ON e.id = ev.id_entrega 
+            WHERE e.id_actividad = :id_actividad 
+            AND e.id_alumno = :alumno_id
+            ORDER BY e.fecha_entrega DESC 
+            LIMIT 1
+        ");
+        $stmt->execute([':id_actividad' => $id_actividad, ':alumno_id' => $alumno_id]);
+        $entrega_especifica = $stmt->rowCount() > 0 ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+        
+        // Obtener detalles de la actividad
+        $stmt = $conn->pdo->prepare("SELECT * FROM actividades WHERE id = :id_actividad");
+        $stmt->execute([':id_actividad' => $id_actividad]);
+        $actividad_detalle = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+    } else if (isset($_GET['id'])) {
+        // Modo normal: ver curso completo
+        $id_curso = (int)$_GET['id'];
+    } else {
         header("Location: mis_cursos.php");
         exit();
     }
     
-    $curso_data = mysqli_fetch_assoc($res_curso_id);
-    $id_curso = $curso_data['id_curso'];
+    // Obtener info del curso (para ambos modos)
+    $stmt = $conn->pdo->prepare("SELECT * FROM cursos WHERE id = :id_curso");
+    $stmt->execute([':id_curso' => $id_curso]);
+    $curso = $stmt->fetch(PDO::FETCH_ASSOC);
     
-    // Obtener la entrega específica
-   $sql_entrega_especifica = "SELECT e.*, ev.calificacion, ev.comentarios, ev.fecha_evaluacion
-                           FROM entregas e 
-                           LEFT JOIN evaluaciones ev ON e.id = ev.id_entrega 
-                           WHERE e.id_actividad = '$id_actividad' 
-                           AND e.id_alumno = '$alumno_id'
-                           ORDER BY e.fecha_entrega DESC 
-                           LIMIT 1";
-    $res_entrega_especifica = mysqli_query($conn, $sql_entrega_especifica);
-    $entrega_especifica = $res_entrega_especifica && mysqli_num_rows($res_entrega_especifica) > 0 
-                          ? mysqli_fetch_assoc($res_entrega_especifica) 
-                          : null;
+    if (!$curso) {
+        header("Location: mis_cursos.php");
+        exit();
+    }
     
-    // Obtener detalles de la actividad
-    $sql_actividad_detalle = "SELECT * FROM actividades WHERE id = '$id_actividad'";
-    $res_actividad_detalle = mysqli_query($conn, $sql_actividad_detalle);
-    $actividad_detalle = mysqli_fetch_assoc($res_actividad_detalle);
+    // Obtener actividades de este curso (solo en modo curso completo)
+    if (!$modo_ver_entrega) {
+        $stmt = $conn->pdo->prepare("SELECT * FROM actividades WHERE id_curso = :id_curso ORDER BY id");
+        $stmt->execute([':id_curso' => $id_curso]);
+        $actividades = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
     
-} else if (isset($_GET['id'])) {
-    // Modo normal: ver curso completo
-    $id_curso = $_GET['id'];
-} else {
+    // Obtener progreso actual
+    $stmt = $conn->pdo->prepare("SELECT progreso FROM inscripciones WHERE id_alumno = :alumno_id AND id_curso = :id_curso");
+    $stmt->execute([':alumno_id' => $alumno_id, ':id_curso' => $id_curso]);
+    $progreso_data = $stmt->fetch(PDO::FETCH_ASSOC);
+    $porcentaje = $progreso_data['progreso'] ?? 0;
+    
+} catch(PDOException $e) {
+    error_log("Error en entrega.php: " . $e->getMessage());
     header("Location: mis_cursos.php");
     exit();
 }
 
-// Obtener info del curso (para ambos modos)
-$sql_curso = "SELECT * FROM cursos WHERE id = '$id_curso'";
-$res_curso = mysqli_query($conn, $sql_curso);
-$curso = mysqli_fetch_assoc($res_curso);
-
-if (!$curso) {
-    header("Location: mis_cursos.php");
-    exit();
-}
-
-// Obtener actividades de este curso (solo en modo curso completo)
-if (!$modo_ver_entrega) {
-    $sql_actividades = "SELECT * FROM actividades WHERE id_curso = '$id_curso' ORDER BY id";
-    $res_actividades = mysqli_query($conn, $sql_actividades);
-}
-
-// Obtener progreso actual
-$sql_prog = "SELECT progreso FROM inscripciones WHERE id_alumno = '$alumno_id' AND id_curso = '$id_curso'";
-$res_prog = mysqli_query($conn, $sql_prog);
-$progreso_data = mysqli_fetch_assoc($res_prog);
-$porcentaje = $progreso_data['progreso'] ?? 0;
-
-// Obtener avatar del alumno
+// Avatares disponibles
 $avatares = [
     'panda' => ['emoji' => '🐼', 'color' => '#3A506B', 'nivel' => 1],
     'dragon' => ['emoji' => '🐉', 'color' => '#FF6B6B', 'nivel' => 1],
@@ -97,17 +105,14 @@ $avatares = [
     'mago' => ['emoji' => '🧙‍♂️', 'color' => '#00C2A8', 'nivel' => 6]
 ];
 
-// Determinar avatar del alumno
-$check_avatar_col = mysqli_query($conn, "SHOW COLUMNS FROM usuarios LIKE 'avatar'");
-$avatar_key = 'panda';
-
-if(mysqli_num_rows($check_avatar_col) > 0) {
-    $query_avatar = "SELECT avatar FROM usuarios WHERE id = '$alumno_id'";
-    $res_avatar = mysqli_query($conn, $query_avatar);
-    if($res_avatar && mysqli_num_rows($res_avatar) > 0) {
-        $avatar_data = mysqli_fetch_assoc($res_avatar);
-        $avatar_key = $avatar_data['avatar'] ?: 'panda';
-    }
+// Obtener avatar del alumno
+try {
+    $stmt = $conn->pdo->prepare("SELECT COALESCE(avatar, 'panda') as avatar FROM usuarios WHERE id = :alumno_id");
+    $stmt->execute([':alumno_id' => $alumno_id]);
+    $avatar_data = $stmt->fetch(PDO::FETCH_ASSOC);
+    $avatar_key = $avatar_data['avatar'] ?? 'panda';
+} catch(PDOException $e) {
+    $avatar_key = 'panda';
 }
 
 if(!isset($avatares[$avatar_key])) {
@@ -119,65 +124,83 @@ $avatar_color = $avatares[$avatar_key]['color'];
 
 // Función para verificar el estado de la tarea
 function verificarEstadoTarea($conn, $actividad_id, $alumno_id) {
-    $sql_envio = "SELECT e.*, ev.calificacion 
-                  FROM entregas e 
-                  LEFT JOIN evaluaciones ev ON e.id = ev.id_entrega 
-                  WHERE e.id_actividad = '$actividad_id' 
-                  AND e.id_alumno = '$alumno_id' 
-                  ORDER BY e.fecha_entrega DESC 
-                  LIMIT 1";
-    
-    $res_envio = mysqli_query($conn, $sql_envio);
-    
-    $sql_actividad = "SELECT intentos_permitidos FROM actividades WHERE id = '$actividad_id'";
-    $res_actividad = mysqli_query($conn, $sql_actividad);
-    $actividad_data = mysqli_fetch_assoc($res_actividad);
-    $intentos_permitidos = $actividad_data['intentos_permitidos'];
-    
-    if ($res_envio && mysqli_num_rows($res_envio) > 0) {
-        $envio_data = mysqli_fetch_assoc($res_envio);
+    try {
+        // Obtener intentos permitidos de la actividad
+        $stmt_act = $conn->pdo->prepare("SELECT intentos_permitidos FROM actividades WHERE id = :id");
+        $stmt_act->execute([':id' => $actividad_id]);
+        $actividad_data = $stmt_act->fetch(PDO::FETCH_ASSOC);
+        $intentos_permitidos = $actividad_data['intentos_permitidos'] ?? 1;
         
-        $sql_count_entregas = "SELECT COUNT(*) as total_entregas 
-                              FROM entregas 
-                              WHERE id_actividad = '$actividad_id' 
-                              AND id_alumno = '$alumno_id'";
-        $res_count = mysqli_query($conn, $sql_count_entregas);
-        $count_data = mysqli_fetch_assoc($res_count);
+        // Contar entregas realizadas
+        $stmt_count = $conn->pdo->prepare("
+            SELECT COUNT(*) as total_entregas 
+            FROM entregas 
+            WHERE id_actividad = :id_actividad 
+            AND id_alumno = :alumno_id
+        ");
+        $stmt_count->execute([':id_actividad' => $actividad_id, ':alumno_id' => $alumno_id]);
+        $count_data = $stmt_count->fetch(PDO::FETCH_ASSOC);
         $intentos_usados = $count_data['total_entregas'];
         
-        if ($intentos_usados >= $intentos_permitidos) {
-            return [
-                'estado' => 'bloqueada',
-                'texto_boton' => 'Ver Entrega',
-                'clase_boton' => 'btn-view',
-                'icono_boton' => 'fa-eye',
-                'mensaje' => 'Ya completaste esta misión',
-                'calificacion' => $envio_data['calificacion'] ?? null,
-                'fecha_envio' => $envio_data['fecha_entrega'] ?? null,
-                'intentos_usados' => $intentos_usados,
-                'intentos_restantes' => 0
-            ];
+        // Obtener última entrega
+        $stmt_entrega = $conn->pdo->prepare("
+            SELECT e.*, ev.calificacion 
+            FROM entregas e 
+            LEFT JOIN evaluaciones ev ON e.id = ev.id_entrega 
+            WHERE e.id_actividad = :id_actividad 
+            AND e.id_alumno = :alumno_id 
+            ORDER BY e.fecha_entrega DESC 
+            LIMIT 1
+        ");
+        $stmt_entrega->execute([':id_actividad' => $actividad_id, ':alumno_id' => $alumno_id]);
+        
+        if ($stmt_entrega->rowCount() > 0) {
+            $envio_data = $stmt_entrega->fetch(PDO::FETCH_ASSOC);
+            
+            if ($intentos_usados >= $intentos_permitidos) {
+                return [
+                    'estado' => 'bloqueada',
+                    'texto_boton' => 'Ver Entrega',
+                    'clase_boton' => 'btn-view',
+                    'icono_boton' => 'fa-eye',
+                    'mensaje' => 'Ya completaste esta misión',
+                    'calificacion' => $envio_data['calificacion'] ?? null,
+                    'fecha_envio' => $envio_data['fecha_entrega'] ?? null,
+                    'intentos_usados' => $intentos_usados,
+                    'intentos_restantes' => 0
+                ];
+            } else {
+                $intentos_restantes = $intentos_permitidos - $intentos_usados;
+                return [
+                    'estado' => 'intentos_disponibles',
+                    'texto_boton' => 'Volver a Intentar',
+                    'clase_boton' => 'btn-retry',
+                    'icono_boton' => 'fa-redo',
+                    'mensaje' => 'Intento ' . $intentos_usados . ' de ' . $intentos_permitidos . ' completado',
+                    'calificacion' => $envio_data['calificacion'] ?? null,
+                    'intentos_restantes' => $intentos_restantes,
+                    'intentos_usados' => $intentos_usados
+                ];
+            }
         } else {
-            $intentos_restantes = $intentos_permitidos - $intentos_usados;
             return [
-                'estado' => 'intentos_disponibles',
-                'texto_boton' => 'Volver a Intentar',
-                'clase_boton' => 'btn-retry',
-                'icono_boton' => 'fa-redo',
-                'mensaje' => 'Intento ' . ($intentos_usados) . ' de ' . $intentos_permitidos . ' completado',
-                'calificacion' => $envio_data['calificacion'] ?? null,
-                'intentos_restantes' => $intentos_restantes,
-                'intentos_usados' => $intentos_usados
+                'estado' => 'disponible',
+                'texto_boton' => 'Comenzar Misión',
+                'clase_boton' => 'btn-start',
+                'icono_boton' => 'fa-play',
+                'mensaje' => 'Primer intento de ' . $intentos_permitidos,
+                'intentos_restantes' => $intentos_permitidos,
+                'intentos_usados' => 0
             ];
         }
-    } else {
+    } catch(PDOException $e) {
         return [
             'estado' => 'disponible',
             'texto_boton' => 'Comenzar Misión',
             'clase_boton' => 'btn-start',
             'icono_boton' => 'fa-play',
-            'mensaje' => 'Primer intento de ' . $intentos_permitidos,
-            'intentos_restantes' => $intentos_permitidos,
+            'mensaje' => 'Primer intento',
+            'intentos_restantes' => 1,
             'intentos_usados' => 0
         ];
     }
@@ -1355,10 +1378,9 @@ function verificarEstadoTarea($conn, $actividad_id, $alumno_id) {
         </div>
         
         <!-- Grid de misiones -->
-        <?php if(mysqli_num_rows($res_actividades) > 0): ?>
+        <?php if(count($actividades) > 0): ?>
             <div class="missions-grid">
-                <?php mysqli_data_seek($res_actividades, 0); // Resetear puntero ?>
-                <?php while($act = mysqli_fetch_assoc($res_actividades)): 
+                <?php foreach($actividades as $act): 
                     // Determinar icono según tipo
                     $mission_icon = '';
                     switch(strtolower($act['tipo'])) {
@@ -1468,14 +1490,14 @@ function verificarEstadoTarea($conn, $actividad_id, $alumno_id) {
                             <?php if($estado_tarea['estado'] == 'bloqueada'): ?>
                                 <!-- Botón para ver entrega (tarea bloqueada) -->
                                 <a href="entrega.php?id_actividad=<?php echo $act['id']; ?>&id_alumno=<?php echo $alumno_id; ?>"  
-                                   class="btn-mission <?php echo $estado_tarea['clase_boton']; ?>">
+                                class="btn-mission <?php echo $estado_tarea['clase_boton']; ?>">
                                     <i class="fas <?php echo $estado_tarea['icono_boton']; ?> me-2"></i>
                                     <?php echo $estado_tarea['texto_boton']; ?>
                                 </a>
                             <?php else: ?>
                                 <!-- Botón para realizar actividad -->
                                 <a href="realizar_actividad.php?id=<?php echo $act['id']; ?>" 
-                                   class="btn-mission <?php echo $estado_tarea['clase_boton']; ?>">
+                                class="btn-mission <?php echo $estado_tarea['clase_boton']; ?>">
                                     <i class="fas <?php echo $estado_tarea['icono_boton']; ?> me-2"></i>
                                     <?php echo $estado_tarea['texto_boton']; ?>
                                 </a>
@@ -1506,7 +1528,7 @@ function verificarEstadoTarea($conn, $actividad_id, $alumno_id) {
                         </div>
                     </div>
                 </div>
-                <?php endwhile; ?>
+                <?php endforeach; ?>
             </div>
         <?php else: ?>
             <div class="no-missions fade-in-up">

@@ -11,93 +11,132 @@ $tutor_id = $_SESSION['user_id'];
 $alumno_id = isset($_GET['alumno_id']) ? intval($_GET['alumno_id']) : 0;
 $curso_id = isset($_GET['curso_id']) ? intval($_GET['curso_id']) : 0;
 
-// Verificar que el alumno esté inscrito en un curso del tutor
-$sql_verificar = "SELECT u.*, c.nombre as curso_nombre
-                  FROM usuarios u
-                  JOIN inscripciones i ON u.id = i.id_alumno
-                  JOIN cursos c ON i.id_curso = c.id
-                  WHERE u.id = '$alumno_id' 
-                  AND u.tipo = 'alumno'
-                  AND c.id_tutor = '$tutor_id'";
-                  
-if ($curso_id > 0) {
-    $sql_verificar .= " AND c.id = '$curso_id'";
-    $sql_verificar .= " LIMIT 1";
-}
-
-$result_verificar = mysqli_query($conn, $sql_verificar);
-
-if (mysqli_num_rows($result_verificar) == 0) {
+if ($alumno_id <= 0) {
     header("Location: reporte_alumnos.php");
     exit();
 }
 
-$alumno_info = mysqli_fetch_assoc($result_verificar);
+// Verificar que el alumno esté inscrito en un curso del tutor
+try {
+    $sql_verificar = "SELECT u.*, c.nombre as curso_nombre
+                      FROM usuarios u
+                      JOIN inscripciones i ON u.id = i.id_alumno
+                      JOIN cursos c ON i.id_curso = c.id
+                      WHERE u.id = :alumno_id 
+                      AND u.tipo = 'alumno'
+                      AND c.id_tutor = :tutor_id";
+                      
+    if ($curso_id > 0) {
+        $sql_verificar .= " AND c.id = :curso_id";
+        $sql_verificar .= " LIMIT 1";
+    }
+    
+    $stmt = $conn->pdo->prepare($sql_verificar);
+    $params = [':alumno_id' => $alumno_id, ':tutor_id' => $tutor_id];
+    if ($curso_id > 0) {
+        $params[':curso_id'] = $curso_id;
+    }
+    $stmt->execute($params);
+    
+    if ($stmt->rowCount() == 0) {
+        header("Location: reporte_alumnos.php");
+        exit();
+    }
+    
+    $alumno_info = $stmt->fetch(PDO::FETCH_ASSOC);
+} catch(PDOException $e) {
+    header("Location: reporte_alumnos.php");
+    exit();
+}
 
 // Obtener información del curso si se especifica
 $curso_nombre = $alumno_info['curso_nombre'];
 if ($curso_id > 0) {
-    $sql_curso = "SELECT * FROM cursos WHERE id = '$curso_id'";
-    $res_curso = mysqli_query($conn, $sql_curso);
-    if ($res_curso && mysqli_num_rows($res_curso) > 0) {
-        $curso_data = mysqli_fetch_assoc($res_curso);
-        $curso_nombre = $curso_data['nombre'];
+    try {
+        $stmt = $conn->pdo->prepare("SELECT * FROM cursos WHERE id = :curso_id");
+        $stmt->execute([':curso_id' => $curso_id]);
+        if ($stmt->rowCount() > 0) {
+            $curso_data = $stmt->fetch(PDO::FETCH_ASSOC);
+            $curso_nombre = $curso_data['nombre'];
+        }
+    } catch(PDOException $e) {
+        // Ignorar error
     }
 }
 
 // Obtener todas las entregas del alumno
-$sql_entregas = "SELECT 
-                    e.*,
-                    a.titulo as actividad_titulo,
-                    a.descripcion as actividad_descripcion,
-                    a.tipo as actividad_tipo,
-                    a.dificultad,
-                    a.fecha_limite,
-                    a.puntos as puntos_actividad,
-                    c.nombre as curso_nombre,
-                    c.id as curso_id,
-                    ev.calificacion,
-                    ev.comentarios as comentarios_tutor,
-                    ev.fecha_evaluacion,
-                    DATEDIFF(a.fecha_limite, CURDATE()) as dias_restantes
-                FROM entregas e
-                JOIN actividades a ON e.id_actividad = a.id
-                JOIN cursos c ON a.id_curso = c.id
-                LEFT JOIN evaluaciones ev ON e.id = ev.id_entrega
-                WHERE e.id_alumno = '$alumno_id'
-                AND c.id_tutor = '$tutor_id'";
-                
-if ($curso_id > 0) {
-    $sql_entregas .= " AND c.id = '$curso_id'";
+try {
+    $sql_entregas = "SELECT 
+                        e.*,
+                        a.titulo as actividad_titulo,
+                        a.descripcion as actividad_descripcion,
+                        a.tipo as actividad_tipo,
+                        a.dificultad,
+                        a.fecha_limite,
+                        a.puntos as puntos_actividad,
+                        c.nombre as curso_nombre,
+                        c.id as curso_id,
+                        ev.calificacion,
+                        ev.comentarios as comentarios_tutor,
+                        ev.fecha_evaluacion,
+                        (a.fecha_limite::date - CURRENT_DATE) as dias_restantes
+                    FROM entregas e
+                    JOIN actividades a ON e.id_actividad = a.id
+                    JOIN cursos c ON a.id_curso = c.id
+                    LEFT JOIN evaluaciones ev ON e.id = ev.id_entrega
+                    WHERE e.id_alumno = :alumno_id
+                    AND c.id_tutor = :tutor_id";
+                    
+    if ($curso_id > 0) {
+        $sql_entregas .= " AND c.id = :curso_id";
+    }
+    
+    $sql_entregas .= " ORDER BY e.fecha_entrega DESC";
+    
+    $stmt = $conn->pdo->prepare($sql_entregas);
+    $params = [':alumno_id' => $alumno_id, ':tutor_id' => $tutor_id];
+    if ($curso_id > 0) {
+        $params[':curso_id'] = $curso_id;
+    }
+    $stmt->execute($params);
+    $entregas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch(PDOException $e) {
+    $entregas = [];
 }
-
-$sql_entregas .= " ORDER BY e.fecha_entrega DESC";
-$res_entregas = mysqli_query($conn, $sql_entregas);
 
 // Obtener estadísticas
-$sql_stats = "SELECT 
-                COUNT(*) as total_entregas,
-                SUM(CASE WHEN e.estado = 'calificado' THEN 1 ELSE 0 END) as calificadas,
-                SUM(CASE WHEN e.estado = 'pendiente' THEN 1 ELSE 0 END) as pendientes,
-                SUM(CASE WHEN e.estado = 'entregado' THEN 1 ELSE 0 END) as entregadas,
-                AVG(ev.calificacion) as promedio_calificaciones,
-                MIN(a.fecha_limite) as proxima_fecha_limite,
-                MAX(e.fecha_entrega) as ultima_entrega
-              FROM entregas e
-              JOIN actividades a ON e.id_actividad = a.id
-              JOIN cursos c ON a.id_curso = c.id
-              LEFT JOIN evaluaciones ev ON e.id = ev.id_entrega
-              WHERE e.id_alumno = '$alumno_id'
-              AND c.id_tutor = '$tutor_id'";
-              
-if ($curso_id > 0) {
-    $sql_stats .= " AND c.id = '$curso_id'";
+try {
+    $sql_stats = "SELECT 
+                    COUNT(*) as total_entregas,
+                    SUM(CASE WHEN e.estado = 'calificado' THEN 1 ELSE 0 END) as calificadas,
+                    SUM(CASE WHEN e.estado = 'pendiente' THEN 1 ELSE 0 END) as pendientes,
+                    SUM(CASE WHEN e.estado = 'entregado' THEN 1 ELSE 0 END) as entregadas,
+                    AVG(ev.calificacion) as promedio_calificaciones,
+                    MIN(a.fecha_limite) as proxima_fecha_limite,
+                    MAX(e.fecha_entrega) as ultima_entrega
+                  FROM entregas e
+                  JOIN actividades a ON e.id_actividad = a.id
+                  JOIN cursos c ON a.id_curso = c.id
+                  LEFT JOIN evaluaciones ev ON e.id = ev.id_entrega
+                  WHERE e.id_alumno = :alumno_id
+                  AND c.id_tutor = :tutor_id";
+                  
+    if ($curso_id > 0) {
+        $sql_stats .= " AND c.id = :curso_id";
+    }
+    
+    $stmt = $conn->pdo->prepare($sql_stats);
+    $params = [':alumno_id' => $alumno_id, ':tutor_id' => $tutor_id];
+    if ($curso_id > 0) {
+        $params[':curso_id'] = $curso_id;
+    }
+    $stmt->execute($params);
+    $stats = $stmt->fetch(PDO::FETCH_ASSOC);
+} catch(PDOException $e) {
+    $stats = ['total_entregas' => 0, 'calificadas' => 0, 'pendientes' => 0, 'entregadas' => 0, 'promedio_calificaciones' => 0];
 }
 
-$res_stats = mysqli_query($conn, $sql_stats);
-$stats = mysqli_fetch_assoc($res_stats);
-
-// Función para obtener color según el estado
+// Funciones auxiliares
 function getEstadoColor($estado) {
     $colores = [
         'pendiente' => 'warning',
@@ -108,7 +147,6 @@ function getEstadoColor($estado) {
     return $colores[$estado] ?? 'secondary';
 }
 
-// Función para obtener icono según el tipo de actividad
 function getActividadIcono($tipo) {
     $iconos = [
         'Quiz' => 'fas fa-question-circle',
@@ -123,7 +161,6 @@ function getActividadIcono($tipo) {
     return $iconos[$tipo] ?? 'fas fa-tasks';
 }
 
-// Función para obtener color de calificación
 function getCalificacionColor($calificacion) {
     if ($calificacion === null) return 'secondary';
     if ($calificacion >= 9) return 'success';
@@ -132,7 +169,6 @@ function getCalificacionColor($calificacion) {
     return 'danger';
 }
 
-// Función para obtener texto de calificación
 function getCalificacionTexto($calificacion) {
     if ($calificacion === null) return 'Sin calificar';
     if ($calificacion >= 9) return 'Excelente';
@@ -141,7 +177,6 @@ function getCalificacionTexto($calificacion) {
     return 'Necesita mejorar';
 }
 
-// Función para obtener color de dificultad
 function getDificultadColor($dificultad) {
     $colores = [
         'Fácil' => 'success',
@@ -152,11 +187,18 @@ function getDificultadColor($dificultad) {
     return $colores[$dificultad] ?? 'secondary';
 }
 
-// Función para formatear fecha
 function formatFecha($fecha) {
     if (!$fecha) return 'No especificada';
     $fecha_obj = new DateTime($fecha);
     return $fecha_obj->format('d/m/Y');
+}
+
+// Aplicar filtro de estado si existe
+$filtro_estado = isset($_GET['estado']) ? $_GET['estado'] : '';
+if ($filtro_estado) {
+    $entregas = array_filter($entregas, function($e) use ($filtro_estado) {
+        return $e['estado'] == $filtro_estado;
+    });
 }
 ?>
 
@@ -845,7 +887,7 @@ function formatFecha($fecha) {
                 <h4 class="mb-0"><i class="fas fa-list-ul me-2"></i> Historial de Entregas</h4>
                 <p class="mb-0 opacity-75">
                     <?php 
-                    $total_tareas = mysqli_num_rows($res_entregas);
+                    $total_tareas = count($entregas);
                     $filtro_estado = isset($_GET['estado']) ? $_GET['estado'] : '';
                     
                     $texto_estado = '';
@@ -859,12 +901,9 @@ function formatFecha($fecha) {
             </div>
             
             <div class="task-list">
-                <?php if(mysqli_num_rows($res_entregas) > 0): ?>
-                    <?php while($entrega = mysqli_fetch_assoc($res_entregas)): 
-                        // Aplicar filtro de estado si existe
-                        $estado_filtro = isset($_GET['estado']) ? $_GET['estado'] : '';
-                        if ($estado_filtro && $entrega['estado'] != $estado_filtro) continue;
-                        
+            <div class="task-list">
+                <?php if(count($entregas) > 0): ?>
+                    <?php foreach($entregas as $entrega): 
                         $icono = getActividadIcono($entrega['actividad_tipo']);
                         $estado_color = getEstadoColor($entrega['estado']);
                         $calificacion_color = getCalificacionColor($entrega['calificacion']);
@@ -877,142 +916,142 @@ function formatFecha($fecha) {
                         $esta_vencida = $fecha_limite < $hoy && $entrega['estado'] == 'pendiente';
                         $fecha_limite_class = $esta_vencida ? 'vencida' : '';
                     ?>
-                        <div class="task-item">
-                            <div class="task-header">
-                                <div>
-                                    <h3 class="task-title"><?php echo htmlspecialchars($entrega['actividad_titulo']); ?></h3>
-                                    <span class="task-course">
-                                        <i class="fas fa-book"></i>
-                                        <?php echo htmlspecialchars($entrega['curso_nombre']); ?>
-                                    </span>
-                                </div>
-                                <div class="text-end">
-                                    <div class="fecha-limite <?php echo $fecha_limite_class; ?>">
-                                        <i class="fas fa-calendar-alt me-1"></i>
-                                        Límite: <?php echo formatFecha($entrega['fecha_limite']); ?>
-                                    </div>
-                                    <?php if($esta_vencida): ?>
-                                        <small class="text-danger">
-                                            <i class="fas fa-exclamation-circle me-1"></i>Vencida
-                                        </small>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-                            
-                            <div class="task-meta">
-                                <span class="meta-badge badge-type">
-                                    <i class="<?php echo str_replace('fas fa-', '', $icono); ?>"></i>
-                                    <?php echo htmlspecialchars($entrega['actividad_tipo']); ?>
-                                </span>
-                                <span class="meta-badge badge-dificultad">
-                                    <i class="fas fa-signal"></i>
-                                    <?php echo htmlspecialchars($entrega['dificultad']); ?>
-                                </span>
-                                <span class="meta-badge badge-puntos">
-                                    <i class="fas fa-trophy"></i>
-                                    <?php echo $entrega['puntos_actividad']; ?> XP
+                    <div class="task-item">
+                        <div class="task-header">
+                            <div>
+                                <h3 class="task-title"><?php echo htmlspecialchars($entrega['actividad_titulo']); ?></h3>
+                                <span class="task-course">
+                                    <i class="fas fa-book"></i>
+                                    <?php echo htmlspecialchars($entrega['curso_nombre']); ?>
                                 </span>
                             </div>
-                            
-                            <?php if(!empty($entrega['actividad_descripcion'])): ?>
-                                <p class="mb-3"><?php echo htmlspecialchars(substr($entrega['actividad_descripcion'], 0, 200)); ?><?php echo strlen($entrega['actividad_descripcion']) > 200 ? '...' : ''; ?></p>
-                            <?php endif; ?>
-                            
-                            <div class="task-status">
-                                <span class="status-badge status-<?php echo $estado_color; ?>">
-                                    <i class="fas fa-<?php echo $estado_color == 'success' ? 'check-circle' : ($estado_color == 'warning' ? 'clock' : 'paper-plane'); ?>"></i>
-                                    <?php echo ucfirst($entrega['estado']); ?>
-                                </span>
-                                <div class="ms-auto">
-                                    <small class="text-muted">
-                                        <i class="fas fa-paper-plane me-1"></i>
-                                        Entregado: <?php echo date('d/m/Y H:i', strtotime($entrega['fecha_entrega'])); ?>
+                            <div class="text-end">
+                                <div class="fecha-limite <?php echo $fecha_limite_class; ?>">
+                                    <i class="fas fa-calendar-alt me-1"></i>
+                                    Límite: <?php echo formatFecha($entrega['fecha_limite']); ?>
+                                </div>
+                                <?php if($esta_vencida): ?>
+                                    <small class="text-danger">
+                                        <i class="fas fa-exclamation-circle me-1"></i>Vencida
                                     </small>
-                                </div>
-                            </div>
-                            
-                            <!-- Contenido de la entrega -->
-                            <?php if(!empty($entrega['respuesta']) || !empty($entrega['archivo'])): ?>
-                                <div class="delivery-content">
-                                    <h5><i class="fas fa-paperclip"></i> Contenido de la Entrega</h5>
-                                    
-                                    <?php if(!empty($entrega['respuesta'])): ?>
-                                        <div class="mb-3">
-                                            <strong>Respuesta:</strong>
-                                            <p class="mb-0 mt-2"><?php echo nl2br(htmlspecialchars($entrega['respuesta'])); ?></p>
-                                        </div>
-                                    <?php endif; ?>
-                                    
-                                    <?php if(!empty($entrega['archivo'])): ?>
-                                        <div>
-                                            <strong>Archivo Adjunto:</strong>
-                                            <div class="mt-2">
-                                                <a href="uploads/<?php echo htmlspecialchars($entrega['archivo']); ?>" 
-                                                   class="file-download" download>
-                                                    <i class="fas fa-download"></i>
-                                                    <?php echo htmlspecialchars($entrega['archivo']); ?>
-                                                </a>
-                                            </div>
-                                        </div>
-                                    <?php endif; ?>
-                                </div>
-                            <?php endif; ?>
-                            
-                            <!-- Calificación -->
-                            <?php if($entrega['estado'] == 'calificado' && $entrega['calificacion'] !== null): ?>
-                                <div class="grade-section">
-                                    <div class="text-center">
-                                        <h5 class="text-muted mb-1">Calificación</h5>
-                                        <div class="grade-display text-<?php echo $calificacion_color; ?>">
-                                            <?php echo number_format($entrega['calificacion'], 1); ?>
-                                        </div>
-                                        <p class="mb-0 text-<?php echo $calificacion_color; ?> fw-bold">
-                                            <i class="fas fa-<?php echo $calificacion_color == 'success' ? 'trophy' : ($calificacion_color == 'info' ? 'thumbs-up' : ($calificacion_color == 'warning' ? 'meh' : 'frown')); ?>"></i>
-                                            <?php echo $calificacion_texto; ?>
-                                        </p>
-                                    </div>
-                                    
-                                    <?php if(!empty($entrega['comentarios_tutor'])): ?>
-                                        <div class="grade-comments">
-                                            <h6><i class="fas fa-comment me-2"></i>Comentarios del Tutor</h6>
-                                            <p class="mb-0 mt-2"><?php echo nl2br(htmlspecialchars($entrega['comentarios_tutor'])); ?></p>
-                                        </div>
-                                    <?php endif; ?>
-                                    
-                                    <?php if($entrega['fecha_evaluacion']): ?>
-                                        <div class="text-end mt-3">
-                                            <small class="text-muted">
-                                                <i class="fas fa-calendar-check me-1"></i>
-                                                Calificado: <?php echo date('d/m/Y H:i', strtotime($entrega['fecha_evaluacion'])); ?>
-                                            </small>
-                                        </div>
-                                    <?php endif; ?>
-                                </div>
-                            <?php endif; ?>
-                            
-                            <!-- Botones de acción -->
-                            <div class="action-buttons">
-                                <?php if($entrega['estado'] == 'pendiente'): ?>
-                                    <a href="revisar_entrega.php?entrega_id=<?php echo $entrega['id']; ?>" 
-                                       class="btn-action btn-calificar">
-                                        <i class="fas fa-star"></i> Calificar Tarea
-                                    </a>
-                                <?php endif; ?>
-                                
-                                <a href="ver_entrega.php?id=<?php echo $entrega['id']; ?>" 
-                                   class="btn-action btn-ver">
-                                    <i class="fas fa-eye"></i> Ver Entrega Completa
-                                </a>
-                                
-                                <?php if($entrega['estado'] == 'calificado'): ?>
-                                    <button class="btn-action" style="background: linear-gradient(90deg, #6c757d, #5a6268); color: white;" 
-                                            onclick="verCalificacion(<?php echo $entrega['id']; ?>)">
-                                        <i class="fas fa-edit"></i> Modificar Calificación
-                                    </button>
                                 <?php endif; ?>
                             </div>
                         </div>
-                    <?php endwhile; ?>
+                        
+                        <div class="task-meta">
+                            <span class="meta-badge badge-type">
+                                <i class="<?php echo str_replace('fas fa-', '', $icono); ?>"></i>
+                                <?php echo htmlspecialchars($entrega['actividad_tipo']); ?>
+                            </span>
+                            <span class="meta-badge badge-dificultad">
+                                <i class="fas fa-signal"></i>
+                                <?php echo htmlspecialchars($entrega['dificultad']); ?>
+                            </span>
+                            <span class="meta-badge badge-puntos">
+                                <i class="fas fa-trophy"></i>
+                                <?php echo $entrega['puntos_actividad']; ?> XP
+                            </span>
+                        </div>
+                        
+                        <?php if(!empty($entrega['actividad_descripcion'])): ?>
+                            <p class="mb-3"><?php echo htmlspecialchars(substr($entrega['actividad_descripcion'], 0, 200)); ?><?php echo strlen($entrega['actividad_descripcion']) > 200 ? '...' : ''; ?></p>
+                        <?php endif; ?>
+                        
+                        <div class="task-status">
+                            <span class="status-badge status-<?php echo $estado_color; ?>">
+                                <i class="fas fa-<?php echo $estado_color == 'success' ? 'check-circle' : ($estado_color == 'warning' ? 'clock' : 'paper-plane'); ?>"></i>
+                                <?php echo ucfirst($entrega['estado']); ?>
+                            </span>
+                            <div class="ms-auto">
+                                <small class="text-muted">
+                                    <i class="fas fa-paper-plane me-1"></i>
+                                    Entregado: <?php echo date('d/m/Y H:i', strtotime($entrega['fecha_entrega'])); ?>
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <!-- Contenido de la entrega -->
+                        <?php if(!empty($entrega['respuesta']) || !empty($entrega['archivo'])): ?>
+                            <div class="delivery-content">
+                                <h5><i class="fas fa-paperclip"></i> Contenido de la Entrega</h5>
+                                
+                                <?php if(!empty($entrega['respuesta'])): ?>
+                                    <div class="mb-3">
+                                        <strong>Respuesta:</strong>
+                                        <p class="mb-0 mt-2"><?php echo nl2br(htmlspecialchars($entrega['respuesta'])); ?></p>
+                                    </div>
+                                <?php endif; ?>
+                                
+                                <?php if(!empty($entrega['archivo'])): ?>
+                                    <div>
+                                        <strong>Archivo Adjunto:</strong>
+                                        <div class="mt-2">
+                                            <a href="uploads/<?php echo htmlspecialchars($entrega['archivo']); ?>" 
+                                            class="file-download" download>
+                                                <i class="fas fa-download"></i>
+                                                <?php echo htmlspecialchars($entrega['archivo']); ?>
+                                            </a>
+                                        </div>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <!-- Calificación -->
+                        <?php if($entrega['estado'] == 'calificado' && $entrega['calificacion'] !== null): ?>
+                            <div class="grade-section">
+                                <div class="text-center">
+                                    <h5 class="text-muted mb-1">Calificación</h5>
+                                    <div class="grade-display text-<?php echo $calificacion_color; ?>">
+                                        <?php echo number_format($entrega['calificacion'], 1); ?>
+                                    </div>
+                                    <p class="mb-0 text-<?php echo $calificacion_color; ?> fw-bold">
+                                        <i class="fas fa-<?php echo $calificacion_color == 'success' ? 'trophy' : ($calificacion_color == 'info' ? 'thumbs-up' : ($calificacion_color == 'warning' ? 'meh' : 'frown')); ?>"></i>
+                                        <?php echo $calificacion_texto; ?>
+                                    </p>
+                                </div>
+                                
+                                <?php if(!empty($entrega['comentarios_tutor'])): ?>
+                                    <div class="grade-comments">
+                                        <h6><i class="fas fa-comment me-2"></i>Comentarios del Tutor</h6>
+                                        <p class="mb-0 mt-2"><?php echo nl2br(htmlspecialchars($entrega['comentarios_tutor'])); ?></p>
+                                    </div>
+                                <?php endif; ?>
+                                
+                                <?php if($entrega['fecha_evaluacion']): ?>
+                                    <div class="text-end mt-3">
+                                        <small class="text-muted">
+                                            <i class="fas fa-calendar-check me-1"></i>
+                                            Calificado: <?php echo date('d/m/Y H:i', strtotime($entrega['fecha_evaluacion'])); ?>
+                                        </small>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <!-- Botones de acción -->
+                        <div class="action-buttons">
+                            <?php if($entrega['estado'] == 'pendiente'): ?>
+                                <a href="revisar_entrega.php?entrega_id=<?php echo $entrega['id']; ?>" 
+                                class="btn-action btn-calificar">
+                                    <i class="fas fa-star"></i> Calificar Tarea
+                                </a>
+                            <?php endif; ?>
+                            
+                            <a href="ver_entrega.php?id=<?php echo $entrega['id']; ?>" 
+                            class="btn-action btn-ver">
+                                <i class="fas fa-eye"></i> Ver Entrega Completa
+                            </a>
+                            
+                            <?php if($entrega['estado'] == 'calificado'): ?>
+                                <button class="btn-action" style="background: linear-gradient(90deg, #6c757d, #5a6268); color: white;" 
+                                        onclick="verCalificacion(<?php echo $entrega['id']; ?>)">
+                                    <i class="fas fa-edit"></i> Modificar Calificación
+                                </button>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
                 <?php else: ?>
                     <div class="empty-state">
                         <div class="empty-state-icon">

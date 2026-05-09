@@ -11,83 +11,136 @@ if (!isset($_SESSION['user_id']) || ($_SESSION['tipo'] != 'tutor' && $_SESSION['
 $tutor_id = $_SESSION['user_id'];
 $tutor_nombre = $_SESSION['nombre'];
 
-// Obtener cursos creados por este tutor para el select
-$sql_cursos = "SELECT id, nombre FROM cursos WHERE id_tutor = '$tutor_id' ORDER BY nombre ASC";
-$res_cursos = mysqli_query($conn, $sql_cursos);
+// Obtener cursos creados por este tutor usando PDO
+try {
+    $stmt = $conn->pdo->prepare("SELECT id, nombre FROM cursos WHERE id_tutor = :tutor_id ORDER BY nombre ASC");
+    $stmt->execute([':tutor_id' => $tutor_id]);
+    $cursos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch(PDOException $e) {
+    $cursos = [];
+}
 
 // Manejar el envío del formulario
 $success = false;
 $error = '';
+$success_message = '';
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    $tipo_actividad = $_POST['tipo_actividad'];
-    $id_curso = mysqli_real_escape_string($conn, $_POST['id_curso']);
-    $titulo = mysqli_real_escape_string($conn, trim($_POST['titulo']));
-    $descripcion = mysqli_real_escape_string($conn, trim($_POST['descripcion']));
-    $puntos = intval($_POST['puntos']);
-    $dificultad = mysqli_real_escape_string($conn, $_POST['dificultad']);
-    $fecha_limite = mysqli_real_escape_string($conn, $_POST['fecha_limite']);
+    $tipo_actividad = $_POST['tipo_actividad'] ?? '';
+    $id_curso = intval($_POST['id_curso'] ?? 0);
+    $titulo = trim($_POST['titulo'] ?? '');
+    $descripcion = trim($_POST['descripcion'] ?? '');
+    $puntos = intval($_POST['puntos'] ?? 0);
+    $dificultad = $_POST['dificultad'] ?? 'Normal';
+    $fecha_limite = $_POST['fecha_limite'] ?? null;
     
     // Validaciones básicas
     if (empty($titulo) || strlen($titulo) < 3) {
         $error = "El título debe tener al menos 3 caracteres.";
     } elseif ($puntos < 1 || $puntos > 1000) {
         $error = "Los puntos deben estar entre 1 y 1000.";
+    } elseif ($id_curso <= 0) {
+        $error = "Debes seleccionar un curso válido.";
     } else {
-        if ($tipo_actividad == 'examen') {
-            // Para examen: obtener configuraciones adicionales
-            $tiempo_limite = isset($_POST['tiempo_limite']) ? intval($_POST['tiempo_limite']) : 60;
-            $intentos_permitidos = isset($_POST['intentos_permitidos']) ? intval($_POST['intentos_permitidos']) : 1;
-            $mostrar_resultados = isset($_POST['mostrar_resultados']) ? 1 : 0;
-            $es_examen = 1;
-            $tipo = 'Examen';
-            
-            // Insertar la actividad como examen
-            $sql = "INSERT INTO actividades (id_curso, titulo, descripcion, tipo, dificultad, fecha_limite, puntos, 
-                    tiempo_limite, intentos_permitidos, mostrar_resultados, es_examen) 
-                    VALUES ('$id_curso', '$titulo', '$descripcion', '$tipo', '$dificultad', '$fecha_limite', '$puntos',
-                    '$tiempo_limite', '$intentos_permitidos', '$mostrar_resultados', '$es_examen')";
-            
-            if (mysqli_query($conn, $sql)) {
-                $actividad_id = mysqli_insert_id($conn);
+        // Verificar que el curso pertenezca al tutor
+        try {
+            $check_curso = $conn->pdo->prepare("SELECT id FROM cursos WHERE id = :id AND id_tutor = :tutor");
+            $check_curso->execute([':id' => $id_curso, ':tutor' => $tutor_id]);
+            if ($check_curso->rowCount() == 0) {
+                $error = "No tienes permiso para crear actividades en este curso.";
+            }
+        } catch(PDOException $e) {
+            $error = "Error al verificar el curso.";
+        }
+    }
+    
+    if (empty($error)) {
+        try {
+            if ($tipo_actividad == 'examen') {
+                // Para examen: obtener configuraciones adicionales
+                $tiempo_limite = intval($_POST['tiempo_limite'] ?? 60);
+                $intentos_permitidos = intval($_POST['intentos_permitidos'] ?? 1);
+                $mostrar_resultados = isset($_POST['mostrar_resultados']) ? 1 : 0;
+                $tipo = 'Examen';
                 
-                // Si hay preguntas, procesarlas
+                // Insertar la actividad como examen
+                $stmt = $conn->pdo->prepare("
+                    INSERT INTO actividades (id_curso, titulo, descripcion, tipo, dificultad, fecha_limite, puntos, 
+                            tiempo_limite, intentos_permitidos, mostrar_resultados, es_examen) 
+                    VALUES (:id_curso, :titulo, :descripcion, :tipo, :dificultad, :fecha_limite, :puntos,
+                            :tiempo_limite, :intentos_permitidos, :mostrar_resultados, :es_examen)
+                ");
+                
+                $stmt->execute([
+                    ':id_curso' => $id_curso,
+                    ':titulo' => $titulo,
+                    ':descripcion' => $descripcion,
+                    ':tipo' => $tipo,
+                    ':dificultad' => $dificultad,
+                    ':fecha_limite' => $fecha_limite,
+                    ':puntos' => $puntos,
+                    ':tiempo_limite' => $tiempo_limite,
+                    ':intentos_permitidos' => $intentos_permitidos,
+                    ':mostrar_resultados' => $mostrar_resultados,
+                    ':es_examen' => 1
+                ]);
+                
+                $actividad_id = $conn->pdo->lastInsertId();
+                
+                // Procesar preguntas del examen
                 if (isset($_POST['preguntas']) && is_array($_POST['preguntas'])) {
-                    foreach ($_POST['preguntas'] as $index => $pregunta_text) {
+                    $preguntas = $_POST['preguntas'];
+                    $tipos_pregunta = $_POST['tipo_pregunta'] ?? [];
+                    $puntos_pregunta = $_POST['puntos_pregunta'] ?? [];
+                    
+                    foreach ($preguntas as $index => $pregunta_text) {
                         if (!empty(trim($pregunta_text))) {
-                            $pregunta = mysqli_real_escape_string($conn, $pregunta_text);
-                            $tipo_pregunta = isset($_POST['tipo_pregunta'][$index]) ? $_POST['tipo_pregunta'][$index] : 'opcion_multiple';
-                            $puntos_pregunta = isset($_POST['puntos_pregunta'][$index]) ? intval($_POST['puntos_pregunta'][$index]) : 5;
+                            $tipo_pregunta = $tipos_pregunta[$index] ?? 'opcion_multiple';
+                            $puntos_preg = intval($puntos_pregunta[$index] ?? 5);
                             
                             // Insertar pregunta
-                            $sql_pregunta = "INSERT INTO preguntas_examen (id_actividad, pregunta, tipo_pregunta, puntos) 
-                                             VALUES ('$actividad_id', '$pregunta', '$tipo_pregunta', '$puntos_pregunta')";
+                            $stmt_preg = $conn->pdo->prepare("
+                                INSERT INTO preguntas_examen (id_actividad, pregunta, tipo_pregunta, puntos) 
+                                VALUES (:id_actividad, :pregunta, :tipo_pregunta, :puntos)
+                            ");
+                            $stmt_preg->execute([
+                                ':id_actividad' => $actividad_id,
+                                ':pregunta' => $pregunta_text,
+                                ':tipo_pregunta' => $tipo_pregunta,
+                                ':puntos' => $puntos_preg
+                            ]);
+                            $pregunta_id = $conn->pdo->lastInsertId();
                             
-                            if (mysqli_query($conn, $sql_pregunta)) {
-                                $pregunta_id = mysqli_insert_id($conn);
-                                
-                                // Procesar opciones si es pregunta de opción múltiple
-                                if ($tipo_pregunta == 'opcion_multiple' && isset($_POST['opciones'][$index])) {
-                                    foreach ($_POST['opciones'][$index] as $opcion_index => $opcion_text) {
-                                        if (!empty(trim($opcion_text))) {
-                                            $opcion = mysqli_real_escape_string($conn, $opcion_text);
-                                            $es_correcta = isset($_POST['correcta'][$index][$opcion_index]) ? 1 : 0;
-                                            
-                                            $sql_opcion = "INSERT INTO opciones_pregunta (id_pregunta, opcion_text, es_correcta) 
-                                                           VALUES ('$pregunta_id', '$opcion', '$es_correcta')";
-                                            mysqli_query($conn, $sql_opcion);
-                                        }
+                            // Procesar opciones si es pregunta de opción múltiple
+                            if ($tipo_pregunta == 'opcion_multiple' && isset($_POST['opciones'][$index])) {
+                                foreach ($_POST['opciones'][$index] as $opcion_index => $opcion_text) {
+                                    if (!empty(trim($opcion_text))) {
+                                        $es_correcta = isset($_POST['correcta'][$index][$opcion_index]) ? 1 : 0;
+                                        $stmt_opc = $conn->pdo->prepare("
+                                            INSERT INTO opciones_pregunta (id_pregunta, opcion_text, es_correcta) 
+                                            VALUES (:id_pregunta, :opcion_text, :es_correcta)
+                                        ");
+                                        $stmt_opc->execute([
+                                            ':id_pregunta' => $pregunta_id,
+                                            ':opcion_text' => $opcion_text,
+                                            ':es_correcta' => $es_correcta
+                                        ]);
                                     }
                                 }
-                                
-                                // Procesar respuesta correcta si es pregunta corta
-                                if ($tipo_pregunta == 'respuesta_corta' && isset($_POST['respuesta_correcta'][$index])) {
-                                    $respuesta = mysqli_real_escape_string($conn, $_POST['respuesta_correcta'][$index]);
-                                    if (!empty(trim($respuesta))) {
-                                        $sql_respuesta = "INSERT INTO respuestas_correctas (id_pregunta, respuesta_correcta) 
-                                                         VALUES ('$pregunta_id', '$respuesta')";
-                                        mysqli_query($conn, $sql_respuesta);
-                                    }
+                            }
+                            
+                            // Procesar respuesta correcta si es pregunta corta
+                            if ($tipo_pregunta == 'respuesta_corta' && isset($_POST['respuesta_correcta'][$index])) {
+                                $respuesta = trim($_POST['respuesta_correcta'][$index]);
+                                if (!empty($respuesta)) {
+                                    $stmt_resp = $conn->pdo->prepare("
+                                        INSERT INTO respuestas_correctas (id_pregunta, respuesta_correcta) 
+                                        VALUES (:id_pregunta, :respuesta)
+                                    ");
+                                    $stmt_resp->execute([
+                                        ':id_pregunta' => $pregunta_id,
+                                        ':respuesta' => $respuesta
+                                    ]);
                                 }
                             }
                         }
@@ -95,24 +148,33 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 }
                 
                 $success = true;
-                $success_message = "🎉 ¡Evaluación programada creada exitosamente! Los alumnos podrán acceder a ella en la fecha establecida.";
+                $success_message = "🎉 ¡Evaluación programada creada exitosamente!";
+                
             } else {
-                $error = "Error al crear el examen: " . mysqli_error($conn);
-            }
-        } else {
-            // Para actividad normal
-            $tipo = mysqli_real_escape_string($conn, $_POST['tipo']);
-            $es_examen = 0;
-            
-            $sql = "INSERT INTO actividades (id_curso, titulo, descripcion, tipo, dificultad, fecha_limite, puntos, es_examen) 
-                    VALUES ('$id_curso', '$titulo', '$descripcion', '$tipo', '$dificultad', '$fecha_limite', '$puntos', '$es_examen')";
-            
-            if (mysqli_query($conn, $sql)) {
+                // Para actividad normal
+                $tipo = $_POST['tipo'] ?? 'Quiz';
+                
+                $stmt = $conn->pdo->prepare("
+                    INSERT INTO actividades (id_curso, titulo, descripcion, tipo, dificultad, fecha_limite, puntos, es_examen) 
+                    VALUES (:id_curso, :titulo, :descripcion, :tipo, :dificultad, :fecha_limite, :puntos, :es_examen)
+                ");
+                
+                $stmt->execute([
+                    ':id_curso' => $id_curso,
+                    ':titulo' => $titulo,
+                    ':descripcion' => $descripcion,
+                    ':tipo' => $tipo,
+                    ':dificultad' => $dificultad,
+                    ':fecha_limite' => $fecha_limite,
+                    ':puntos' => $puntos,
+                    ':es_examen' => 0
+                ]);
+                
                 $success = true;
-                $success_message = "🚀 ¡Misión creada exitosamente! Los exploradores están listos para esta nueva aventura.";
-            } else {
-                $error = "Error al crear la actividad: " . mysqli_error($conn);
+                $success_message = "🚀 ¡Misión creada exitosamente!";
             }
+        } catch(PDOException $e) {
+            $error = "Error al crear la actividad: " . $e->getMessage();
         }
     }
 }

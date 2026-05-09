@@ -11,7 +11,6 @@ if (!isset($_SESSION['user_id']) || $_SESSION['tipo'] != 'alumno') {
 $alumno_id = $_SESSION['user_id'];
 $nombre_alumno = $_SESSION['nombre'];
 
-// Consultar cursos en los que está inscrito (CORREGIDO PARA POSTGRESQL)
 // Consultar cursos en los que está inscrito - USANDO PDO DIRECTAMENTE
 try {
     $stmt = $conn->pdo->prepare("
@@ -34,24 +33,32 @@ try {
     $total_cursos = 0;
 }
 
-// Consultar actividades recientes
-$query_actividades = "SELECT a.titulo, a.id_curso, e.fecha_entrega, e.estado, ev.calificacion 
-                      FROM entregas e 
-                      JOIN actividades a ON e.id_actividad = a.id 
-                      LEFT JOIN evaluaciones ev ON e.id = ev.id_entrega
-                      WHERE e.id_alumno = '$alumno_id' 
-                      ORDER BY e.fecha_entrega DESC LIMIT 5";
-$res_actividades = mysqli_query($conn, $query_actividades);
+// Consultar actividades recientes (CORREGIDO)
+try {
+    $stmt_act = $conn->pdo->prepare("
+        SELECT a.titulo, a.id_curso, e.fecha_entrega, e.estado, ev.calificacion 
+        FROM entregas e 
+        JOIN actividades a ON e.id_actividad = a.id 
+        LEFT JOIN evaluaciones ev ON e.id = ev.id_entrega
+        WHERE e.id_alumno = :alumno_id 
+        ORDER BY e.fecha_entrega DESC LIMIT 5
+    ");
+    $stmt_act->execute([':alumno_id' => $alumno_id]);
+    $actividades_recientes = $stmt_act->fetchAll(PDO::FETCH_ASSOC);
+    $total_actividades_recientes = count($actividades_recientes);
+} catch(PDOException $e) {
+    $actividades_recientes = [];
+    $total_actividades_recientes = 0;
+}
+
 // Calcular estadísticas
 $progreso_promedio = 0;
 $total_actividades_completadas = 0;
 
 if ($total_cursos > 0) {
-    // Recorrer los cursos para calcular progreso y actividades completadas
     foreach($cursos_data as $curso) {
         $progreso_promedio += $curso['progreso'];
         
-        // Contar actividades completadas para este curso
         try {
             $stmt_completadas = $conn->pdo->prepare("
                 SELECT COUNT(DISTINCT e.id_actividad) as completadas 
@@ -66,30 +73,10 @@ if ($total_cursos > 0) {
                 ':curso_id' => $curso['id']
             ]);
             $completadas_data = $stmt_completadas->fetch(PDO::FETCH_ASSOC);
-            $total_actividades_completadas += $completadas_data['completadas'];
+            $total_actividades_completadas += $completadas_data['completadas'] ?? 0;
         } catch(PDOException $e) {
             // Error al contar, continuar
         }
-    }
-    $progreso_promedio = round($progreso_promedio / $total_cursos);
-}
-
-if ($total_cursos > 0) {
-    mysqli_data_seek($res_cursos, 0);
-    while($curso = mysqli_fetch_assoc($res_cursos)) {
-        $progreso_promedio += $curso['progreso'];
-        
-        // Contar actividades completadas para este curso
-        $curso_id = $curso['id'];
-        $sql_completadas = "SELECT COUNT(DISTINCT e.id_actividad) as completadas 
-                           FROM entregas e 
-                           JOIN actividades a ON e.id_actividad = a.id 
-                           WHERE e.id_alumno = '$alumno_id' 
-                           AND a.id_curso = '$curso_id' 
-                           AND e.estado = 'calificado'";
-        $res_completadas = mysqli_query($conn, $sql_completadas);
-        $completadas_data = mysqli_fetch_assoc($res_completadas);
-        $total_actividades_completadas += $completadas_data['completadas'];
     }
     $progreso_promedio = round($progreso_promedio / $total_cursos);
 }
@@ -106,17 +93,14 @@ $avatares = [
     'mago' => ['emoji' => '🧙‍♂️', 'color' => '#00C2A8', 'nivel' => 6]
 ];
 
-// CORREGIDO PARA POSTGRESQL - Verificar columna avatar
-$check_avatar_col = mysqli_query($conn, "SELECT column_name FROM information_schema.columns WHERE table_name='usuarios' AND column_name='avatar'");
-$avatar_key = 'panda';
-
-if(mysqli_num_rows($check_avatar_col) > 0) {
-    $query_avatar = "SELECT COALESCE(avatar, 'panda') as avatar FROM usuarios WHERE id = '$alumno_id'";
-    $res_avatar = mysqli_query($conn, $query_avatar);
-    if($res_avatar && mysqli_num_rows($res_avatar) > 0) {
-        $avatar_data = mysqli_fetch_assoc($res_avatar);
-        $avatar_key = $avatar_data['avatar'] ?: 'panda';
-    }
+// Obtener avatar del alumno
+try {
+    $stmt = $conn->pdo->prepare("SELECT COALESCE(avatar, 'panda') as avatar FROM usuarios WHERE id = :alumno_id");
+    $stmt->execute([':alumno_id' => $alumno_id]);
+    $avatar_data = $stmt->fetch(PDO::FETCH_ASSOC);
+    $avatar_key = $avatar_data['avatar'] ?? 'panda';
+} catch(PDOException $e) {
+    $avatar_key = 'panda';
 }
 
 if(!isset($avatares[$avatar_key])) {
@@ -125,6 +109,30 @@ if(!isset($avatares[$avatar_key])) {
 
 $avatar_emoji = $avatares[$avatar_key]['emoji'];
 $avatar_color = $avatares[$avatar_key]['color'];
+
+// Función para ajustar brillo
+function adjustBrightness($hex, $steps) {
+    $steps = max(-255, min(255, $steps));
+    $hex = str_replace('#', '', $hex);
+    
+    if (strlen($hex) == 3) {
+        $hex = str_repeat(substr($hex,0,1), 2).str_repeat(substr($hex,1,1), 2).str_repeat(substr($hex,2,1), 2);
+    }
+    
+    $r = hexdec(substr($hex,0,2));
+    $g = hexdec(substr($hex,2,2));
+    $b = hexdec(substr($hex,4,2));
+    
+    $r = max(0, min(255, $r + $steps));
+    $g = max(0, min(255, $g + $steps));
+    $b = max(0, min(255, $b + $steps));
+    
+    $r_hex = str_pad(dechex($r), 2, '0', STR_PAD_LEFT);
+    $g_hex = str_pad(dechex($g), 2, '0', STR_PAD_LEFT);
+    $b_hex = str_pad(dechex($b), 2, '0', STR_PAD_LEFT);
+    
+    return '#'.$r_hex.$g_hex.$b_hex;
+}
 ?>
 
 <!DOCTYPE html>
@@ -159,7 +167,6 @@ $avatar_color = $avatares[$avatar_key]['color'];
             margin: 0;
         }
         
-        /* Sidebar estilo infantil */
         .sidebar-kid {
             background: linear-gradient(180deg, #FFFFFF 0%, #f5fcfe 100%);
             width: var(--sidebar-width);
@@ -216,25 +223,25 @@ $avatar_color = $avatares[$avatar_key]['color'];
         }
         
         .logo-sub {
-        font-family: 'Poppins', sans-serif;
-        font-size: 1.2rem;
-        color: var(--primary);
-        font-weight: 600;
-        letter-spacing: 8px;
-        text-transform: uppercase;
-        margin-left: 10px;
-        position: relative;
-    }
-    .tagline {
-        color: #666;
-        font-size: 0.9rem;
-        margin-top: 10px;
-        font-weight: 500;
-        letter-spacing: 2px;
-        text-transform: uppercase;
-    }
+            font-family: 'Poppins', sans-serif;
+            font-size: 1.2rem;
+            color: var(--primary);
+            font-weight: 600;
+            letter-spacing: 8px;
+            text-transform: uppercase;
+            margin-left: 10px;
+            position: relative;
+        }
         
-        /* Avatar del niño */
+        .tagline {
+            color: #666;
+            font-size: 0.9rem;
+            margin-top: 10px;
+            font-weight: 500;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        
         .kid-avatar {
             position: relative;
             width: 90px;
@@ -288,7 +295,6 @@ $avatar_color = $avatares[$avatar_key]['color'];
             display: inline-block;
         }
         
-        /* Navegación del sidebar */
         .nav-item {
             margin: 8px 15px;
         }
@@ -340,7 +346,6 @@ $avatar_color = $avatares[$avatar_key]['color'];
             100% { transform: scale(1); }
         }
         
-        /* Botón de cerrar sesión */
         .logout-link {
             background: linear-gradient(90deg, rgba(255, 87, 87, 0.1) 0%, rgba(255, 87, 87, 0.05) 100%);
             color: #ff5757 !important;
@@ -354,95 +359,6 @@ $avatar_color = $avatares[$avatar_key]['color'];
             border-left-color: #ff3030 !important;
         }
         
-        /* Contenido principal */
-        .main-content {
-            margin-left: var(--sidebar-width);
-            padding: 30px;
-            width: calc(100% - var(--sidebar-width));
-            min-height: 100vh;
-        }
-        
-        /* Botón para móvil */
-        .menu-toggle {
-            display: none;
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            z-index: 101;
-            background: linear-gradient(90deg, var(--primary), var(--secondary));
-            color: white;
-            border: none;
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            font-size: 1.5rem;
-            box-shadow: 0 5px 15px rgba(44, 186, 236, 0.3);
-            transition: all 0.3s ease;
-        }
-        
-        .menu-toggle:hover {
-            transform: scale(1.1);
-        }
-        
-        /* Avatar del niño */
-        /* .kid-avatar {
-            position: relative;
-            width: 70px;
-            height: 70px;
-            border-radius: 50%;
-            background: <?php echo $avatar_color; ?>;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 15px;
-            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
-            border: 3px solid white;
-            transition: all 0.3s ease;
-            cursor: pointer;
-        }
-        
-        .kid-avatar:hover {
-            transform: scale(1.1) rotate(5deg);
-            box-shadow: 0 12px 30px rgba(0,0,0,0.2);
-        }
-        
-        .avatar-emoji {
-            font-size: 2.8rem;
-            filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.2));
-        } */
-        
-        /* .kid-name {
-            font-family: 'Fredoka One', cursive;
-            font-size: 1.2rem;
-            color: var(--primary);
-            margin-bottom: 5px;
-        }
-        
-        .kid-level {
-            font-size: 0.8rem;
-            color: white;
-            background: linear-gradient(90deg, var(--secondary), #f5c15d);
-            padding: 3px 12px;
-            border-radius: 15px;
-            display: inline-block;
-        } */
-        
-
-        /* Botón de cerrar sesión */
-        .logout-link {
-            background: linear-gradient(90deg, rgba(255, 87, 87, 0.1) 0%, rgba(255, 87, 87, 0.05) 100%);
-            color: #ff5757 !important;
-            border-left: 4px solid #ff5757 !important;
-            margin-top: 10px;
-        }
-        
-        .logout-link:hover {
-            background: linear-gradient(90deg, rgba(255, 87, 87, 0.2) 0%, rgba(255, 87, 87, 0.1) 100%) !important;
-            color: #ff3030 !important;
-            border-left-color: #ff3030 !important;
-        }
-        
-        /* Contenido principal */
         .main-content {
             margin-left: var(--sidebar-width);
             padding: 40px;
@@ -450,7 +366,6 @@ $avatar_color = $avatares[$avatar_key]['color'];
             min-height: 100vh;
         }
         
-        /* Botón para móvil */
         .menu-toggle {
             display: none;
             position: fixed;
@@ -472,7 +387,6 @@ $avatar_color = $avatares[$avatar_key]['color'];
             transform: scale(1.1);
         }
         
-        /* Encabezado de la página */
         .page-header {
             background: linear-gradient(135deg, #ffffff, #f8fdff);
             border-radius: 25px;
@@ -510,7 +424,6 @@ $avatar_color = $avatares[$avatar_key]['color'];
             line-height: 1.6;
         }
         
-        /* Estadísticas */
         .stats-container {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -592,7 +505,6 @@ $avatar_color = $avatares[$avatar_key]['color'];
             font-weight: 600;
         }
         
-        /* Botón de acción principal */
         .btn-main-action {
             background: linear-gradient(90deg, var(--accent), #6aab39);
             border: none;
@@ -615,7 +527,6 @@ $avatar_color = $avatares[$avatar_key]['color'];
             color: white;
         }
         
-        /* Botón de volver */
         .btn-back {
             background: linear-gradient(90deg, var(--primary), #2ca5d4);
             color: white;
@@ -638,7 +549,6 @@ $avatar_color = $avatares[$avatar_key]['color'];
             color: white;
         }
         
-        /* Grid de cursos */
         .courses-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
@@ -837,7 +747,6 @@ $avatar_color = $avatares[$avatar_key]['color'];
             transform: translateY(-3px);
         }
         
-        /* Mensaje sin cursos */
         .no-courses {
             text-align: center;
             padding: 80px 30px;
@@ -854,7 +763,6 @@ $avatar_color = $avatares[$avatar_key]['color'];
             color: var(--primary);
         }
         
-        /* Responsive */
         @media (max-width: 1200px) {
             .courses-grid {
                 grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
@@ -922,7 +830,6 @@ $avatar_color = $avatares[$avatar_key]['color'];
             }
         }
         
-        /* Animaciones */
         @keyframes fadeInUp {
             from {
                 opacity: 0;
@@ -938,7 +845,6 @@ $avatar_color = $avatares[$avatar_key]['color'];
             animation: fadeInUp 0.6s ease-out;
         }
         
-        /* Elementos decorativos */
         .floating-element {
             position: fixed;
             background: linear-gradient(135deg, rgba(44, 186, 236, 0.1), rgba(240, 174, 42, 0.1));
@@ -967,7 +873,6 @@ $avatar_color = $avatares[$avatar_key]['color'];
             }
         }
         
-        /* Actividades recientes */
         .recent-activities {
             background: white;
             border-radius: 20px;
@@ -1060,30 +965,25 @@ $avatar_color = $avatares[$avatar_key]['color'];
     </style>
 </head>
 <body>
-    <!-- Botón para móvil -->
     <button class="menu-toggle">
         <i class="fas fa-bars"></i>
     </button>
     
-    <!-- Elementos decorativos flotantes -->
     <div class="floating-element" style="top: 10%; right: 5%; width: 100px; height: 100px; background: linear-gradient(135deg, rgb(44, 185, 236), rgba(44, 186, 236, 0.1)); animation-delay: 0s;"></div>
     <div class="floating-element" style="bottom: 15%; left: 5%; width: 80px; height: 80px; background: linear-gradient(135deg, rgb(240, 174, 42), rgba(240, 174, 42, 0.1)); animation-delay: 1s;"></div>
     <div class="floating-element" style="top: 30%; left: 10%; width: 60px; height: 60px; background: linear-gradient(135deg, rgb(130, 191, 70), rgba(131, 191, 70, 0.1)); animation-delay: 2s;"></div>
     
-    <!-- Sidebar infantil -->
     <div class="sidebar-kid">
-        <!-- Contenido con scroll -->
         <div class="sidebar-content">
             <div class="sidebar-brand">
                 <div class="logo-container">
-                <div class="logo-main">D&F</div>
-                <div class="logo-sub">mindspace</div>
-                <div class="tagline">
-                    <span>EXPLORA</span> • <span>CREA</span> • <span>APRENDE</span>
+                    <div class="logo-main">D&F</div>
+                    <div class="logo-sub">mindspace</div>
+                    <div class="tagline">
+                        <span>EXPLORA</span> • <span>CREA</span> • <span>APRENDE</span>
+                    </div>
                 </div>
-            </div>
                 
-                <!-- Avatar del niño -->
                 <div class="kid-avatar" id="kidAvatar">
                     <span class="avatar-emoji"><?php echo $avatar_emoji; ?></span>
                     <div class="avatar-status"></div>
@@ -1093,15 +993,8 @@ $avatar_color = $avatares[$avatar_key]['color'];
                 <span class="kid-level">
                     <i class="fas fa-star me-1"></i>Nivel <?php echo $avatares[$avatar_key]['nivel']; ?>
                 </span>
-                
-                <!-- Puntos -->
-                <!-- <div class="points-container" style="text-align: center; padding: 15px; background: linear-gradient(135deg, rgba(255, 107, 139, 0.1), rgba(255, 107, 139, 0.05)); border-radius: 15px; margin: 15px;">
-                    <div class="points-value" style="font-size: 2rem; font-family: 'Fredoka One', cursive; color: var(--danger); margin: 5px 0;"><?php echo $puntos_alumno; ?></div>
-                    <div class="points-label" style="color: #666; font-size: 0.9rem;">Puntos de Aventura</div>
-                </div> -->
             </div>
             
-            <!-- Navegación -->
             <ul class="nav flex-column mt-3">
                 <li class="nav-item">
                     <a href="dashboard_alumno.php" class="nav-link">
@@ -1128,12 +1021,11 @@ $avatar_color = $avatares[$avatar_key]['color'];
                     <a href="mis_actividades.php" class="nav-link">
                         <i class="fas fa-tasks"></i>
                         <span>Mis Misiones</span>
-                        <?php if(mysqli_num_rows($res_actividades) > 0): ?>
-                            <span class="badge-notification ms-auto"><?php echo mysqli_num_rows($res_actividades); ?></span>
+                        <?php if($total_actividades_recientes > 0): ?>
+                            <span class="badge-notification ms-auto"><?php echo $total_actividades_recientes; ?></span>
                         <?php endif; ?>
                     </a>
                 </li>
-            
                 <li class="nav-item">
                     <a href="avatar_shop.php" class="nav-link">
                         <i class="fas fa-user-astronaut"></i>
@@ -1143,7 +1035,6 @@ $avatar_color = $avatares[$avatar_key]['color'];
             </ul>
         </div>
         
-        <!-- Footer fijo en la parte inferior -->
         <div class="sidebar-footer">
             <a href="logout.php" class="nav-link logout-link">
                 <i class="fas fa-sign-out-alt"></i>
@@ -1152,12 +1043,10 @@ $avatar_color = $avatares[$avatar_key]['color'];
         </div>
     </div>
     
-    <!-- Contenido principal -->
+    <!-- CONTENIDO PRINCIPAL -->
     <div class="main-content">
         
-        <!-- Encabezado de la página -->
         <div class="page-header fade-in-up">
-            <!-- Botón de volver -->
             <a href="dashboard_alumno.php" class="btn-back">
                 <i class="fas fa-arrow-left"></i> Volver a Mi Mundo
             </a>
@@ -1199,7 +1088,6 @@ $avatar_color = $avatares[$avatar_key]['color'];
                     <i class="fas fa-clock"></i>
                 </div>
                 <?php
-                // Calcular tiempo total estimado
                 $tiempo_total = 0;
                 if ($total_cursos > 0) {
                     foreach($cursos_data as $curso) {
@@ -1211,223 +1099,175 @@ $avatar_color = $avatares[$avatar_key]['color'];
                 <div class="stat-label">Tiempo Total de Aventuras</div>
             </div>
         </div>
-    </div>
-    
-    <!-- Botón para explorar más cursos -->
-    <div class="mb-5 fade-in-up" style="animation-delay: 0.2s">
-        <a href="catalogo.php" class="btn-main-action">
-            <i class="fas fa-plus-circle"></i> Descubrir Nuevas Aventuras
-        </a>
-    </div>
-    
-    <!-- Grid de cursos -->
-    <!-- Grid de cursos -->
-    <?php if($total_cursos > 0): ?>
-        <div class="courses-grid fade-in-up" style="animation-delay: 0.3s">
-            <?php 
-            $course_colors = [
-                'var(--primary)', 
-                'var(--accent)', 
-                'var(--secondary)', 
-                'var(--purple)', 
-                'var(--pink)',
-                '#FF9F1C',
-                '#2EC4B6',
-                '#E71D36'
-            ];
-            $color_index = 0;
-            
-            foreach($cursos_data as $curso):
-                // Asignar color de forma cíclica
-                $course_color = $course_colors[$color_index % count($course_colors)];
-                $color_index++;
-                
-                // Determinar el color del nivel
-                $level_colors = [
-                    'Básico' => 'rgba(44, 186, 236, 0.8)',
-                    'Intermedio' => 'rgba(131, 191, 70, 0.8)',
-                    'Avanzado' => 'rgba(240, 174, 42, 0.8)'
-                ];
-                $level_color = isset($level_colors[$curso['nivel']]) ? $level_colors[$curso['nivel']] : $level_colors['Básico'];
-            ?>
-            <div class="course-card">
-                <!-- Encabezado del curso con color dinámico -->
-                <div class="course-header" style="background: <?php echo $course_color; ?>;">
-                    <span class="course-level" style="background: <?php echo $level_color; ?>;">
-                        <i class="fas fa-chart-line me-1"></i> <?php echo htmlspecialchars($curso['nivel']); ?>
-                    </span>
-                    <h3 class="course-title"><?php echo htmlspecialchars($curso['nombre']); ?></h3>
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 10px;">
-                        <div style="display: flex; align-items: center; gap: 5px; color: rgba(255,255,255,0.9);">
-                            <i class="fas fa-user-graduate"></i>
-                            <span>Tutor: <?php echo htmlspecialchars($curso['tutor_nombre']); ?></span>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Cuerpo del curso -->
-                <div class="course-body">
-                    <p class="course-description">
-                        <?php echo htmlspecialchars($curso['descripcion'] ?? '¡Embárcate en esta aventura de aprendizaje!'); ?>
-                    </p>
-                    
-                    <!-- Progreso -->
-                    <div class="course-progress-container">
-                        <div class="progress-label">
-                            <span>Tu progreso en la aventura:</span>
-                            <span><?php echo $curso['progreso']; ?>%</span>
-                        </div>
-                        <div class="progress-bar-container">
-                            <div class="progress-bar-fill" style="width: <?php echo $curso['progreso']; ?>%; background: linear-gradient(90deg, <?php echo $course_color; ?>, <?php echo adjustBrightness($course_color, 30); ?>);"></div>
-                        </div>
-                    </div>
-                    
-                    <!-- Metadatos -->
-                    <div class="course-meta">
-                        <div class="meta-item">
-                            <i class="fas fa-clock"></i>
-                            <span><?php echo $curso['duracion_horas']; ?> horas</span>
-                        </div>
-                        <div class="meta-item">
-                            <i class="fas fa-tasks"></i>
-                            <span><?php echo $curso['total_actividades']; ?> misiones</span>
-                        </div>
-                    </div>
-                    
-                    <!-- Botones de acción -->
-                    <div class="course-actions">
-                        <a href="ver_curso.php?id=<?php echo $curso['id']; ?>" class="btn-course btn-primary-course">
-                            <i class="fas fa-play-circle"></i> Continuar Aventura
-                        </a>
-                        <a href="mis_actividades.php?curso=<?php echo $curso['id']; ?>" class="btn-course btn-outline-course">
-                            <i class="fas fa-list-check"></i> Ver Misiones
-                        </a>
-                    </div>
-                </div>
-            </div>
-            <?php endforeach; ?>
-        </div>
-    <?php else: ?>
-        <!-- Mensaje cuando no hay cursos -->
-        <div class="no-courses fade-in-up" style="animation-delay: 0.3s">
-            <div class="no-courses-icon">
-                <i class="fas fa-compass"></i>
-            </div>
-            <h3 style="color: var(--primary); margin-bottom: 15px; font-family: 'Fredoka One', cursive;">
-                ¡No tienes aventuras activas!
-            </h3>
-            <p style="color: #666; margin-bottom: 30px; max-width: 500px; margin-left: auto; margin-right: auto;">
-                Parece que aún no te has inscrito en ninguna aventura de aprendizaje. ¡Explora nuestro catálogo y encuentra emocionantes cursos para comenzar tu viaje!
-            </p>
+        
+        <!-- Botón para explorar más cursos -->
+        <div class="mb-5 fade-in-up" style="animation-delay: 0.2s">
             <a href="catalogo.php" class="btn-main-action">
-                <i class="fas fa-search"></i> Explorar Aventuras Disponibles
+                <i class="fas fa-plus-circle"></i> Descubrir Nuevas Aventuras
             </a>
         </div>
-    <?php endif; ?>
-    
-    <!-- Actividades recientes -->
-    <?php if(mysqli_num_rows($res_actividades) > 0): ?>
-    <div class="recent-activities fade-in-up" style="animation-delay: 0.4s">
-        <h3 class="activities-title">
-            <i class="fas fa-history"></i> Tus Misiones Recientes
-        </h3>
         
-        <div class="activity-list">
-            <?php 
-            mysqli_data_seek($res_actividades, 0);
-            while($actividad = mysqli_fetch_assoc($res_actividades)): 
-                $status_text = ($actividad['estado'] == 'calificado') ? 'Calificado' : 'Pendiente';
-                $status_class = ($actividad['estado'] == 'calificado') ? 'status-completed' : 'status-pending';
-            ?>
-            <div class="activity-item">
-                <div class="activity-icon">
-                    <i class="fas fa-tasks"></i>
-                </div>
-                <div class="activity-content">
-                    <div class="activity-title"><?php echo htmlspecialchars($actividad['titulo']); ?></div>
-                    <div class="activity-meta">
-                        <span><i class="fas fa-calendar"></i> <?php echo date('d/m/Y', strtotime($actividad['fecha_entrega'])); ?></span>
-                        <?php if($actividad['calificacion']): ?>
-                        <span><i class="fas fa-star"></i> Calificación: <?php echo $actividad['calificacion']; ?></span>
-                        <?php endif; ?>
+        <!-- Grid de cursos -->
+        <?php if($total_cursos > 0): ?>
+            <div class="courses-grid fade-in-up" style="animation-delay: 0.3s">
+                <?php 
+                $course_colors = [
+                    'var(--primary)', 'var(--accent)', 'var(--secondary)', 
+                    'var(--purple)', 'var(--pink)', '#FF9F1C', '#2EC4B6', '#E71D36'
+                ];
+                $color_index = 0;
+                
+                foreach($cursos_data as $curso):
+                    $course_color = $course_colors[$color_index % count($course_colors)];
+                    $color_index++;
+                    
+                    $level_colors = [
+                        'Básico' => 'rgba(44, 186, 236, 0.8)',
+                        'Intermedio' => 'rgba(131, 191, 70, 0.8)',
+                        'Avanzado' => 'rgba(240, 174, 42, 0.8)'
+                    ];
+                    $level_color = isset($level_colors[$curso['nivel']]) ? $level_colors[$curso['nivel']] : $level_colors['Básico'];
+                ?>
+                <div class="course-card">
+                    <div class="course-header" style="background: <?php echo $course_color; ?>;">
+                        <span class="course-level" style="background: <?php echo $level_color; ?>;">
+                            <i class="fas fa-chart-line me-1"></i> <?php echo htmlspecialchars($curso['nivel']); ?>
+                        </span>
+                        <h3 class="course-title"><?php echo htmlspecialchars($curso['nombre']); ?></h3>
+                        <div style="display: flex; align-items: center; gap: 10px; margin-top: 10px;">
+                            <div style="display: flex; align-items: center; gap: 5px; color: rgba(255,255,255,0.9);">
+                                <i class="fas fa-user-graduate"></i>
+                                <span>Tutor: <?php echo htmlspecialchars($curso['tutor_nombre']); ?></span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="course-body">
+                        <p class="course-description">
+                            <?php echo htmlspecialchars($curso['descripcion'] ?? '¡Embárcate en esta aventura de aprendizaje!'); ?>
+                        </p>
+                        
+                        <div class="course-progress-container">
+                            <div class="progress-label">
+                                <span>Tu progreso en la aventura:</span>
+                                <span><?php echo $curso['progreso']; ?>%</span>
+                            </div>
+                            <div class="progress-bar-container">
+                                <div class="progress-bar-fill" style="width: <?php echo $curso['progreso']; ?>%; background: linear-gradient(90deg, <?php echo $course_color; ?>, <?php echo adjustBrightness($course_color, 30); ?>);"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="course-meta">
+                            <div class="meta-item">
+                                <i class="fas fa-clock"></i>
+                                <span><?php echo $curso['duracion_horas']; ?> horas</span>
+                            </div>
+                            <div class="meta-item">
+                                <i class="fas fa-tasks"></i>
+                                <span><?php echo $curso['total_actividades']; ?> misiones</span>
+                            </div>
+                        </div>
+                        
+                        <div class="course-actions">
+                            <a href="ver_curso.php?id=<?php echo $curso['id']; ?>" class="btn-course btn-primary-course">
+                                <i class="fas fa-play-circle"></i> Continuar Aventura
+                            </a>
+                            <a href="mis_actividades.php?curso=<?php echo $curso['id']; ?>" class="btn-course btn-outline-course">
+                                <i class="fas fa-list-check"></i> Ver Misiones
+                            </a>
+                        </div>
                     </div>
                 </div>
-                <span class="activity-status <?php echo $status_class; ?>">
-                    <?php echo $status_text; ?>
-                </span>
+                <?php endforeach; ?>
             </div>
-            <?php endwhile; ?>
+        <?php else: ?>
+            <div class="no-courses fade-in-up" style="animation-delay: 0.3s">
+                <div class="no-courses-icon">
+                    <i class="fas fa-compass"></i>
+                </div>
+                <h3 style="color: var(--primary); margin-bottom: 15px; font-family: 'Fredoka One', cursive;">
+                    ¡No tienes aventuras activas!
+                </h3>
+                <p style="color: #666; margin-bottom: 30px; max-width: 500px; margin-left: auto; margin-right: auto;">
+                    Parece que aún no te has inscrito en ninguna aventura de aprendizaje. ¡Explora nuestro catálogo y encuentra emocionantes cursos para comenzar tu viaje!
+                </p>
+                <a href="catalogo.php" class="btn-main-action">
+                    <i class="fas fa-search"></i> Explorar Aventuras Disponibles
+                </a>
+            </div>
+        <?php endif; ?>
+        
+        <!-- Actividades recientes -->
+        <?php if($total_actividades_recientes > 0): ?>
+        <div class="recent-activities fade-in-up" style="animation-delay: 0.4s">
+            <h3 class="activities-title">
+                <i class="fas fa-history"></i> Tus Misiones Recientes
+            </h3>
+            
+            <div class="activity-list">
+                <?php foreach($actividades_recientes as $actividad): 
+                    $status_text = ($actividad['estado'] == 'calificado') ? 'Calificado' : 'Pendiente';
+                    $status_class = ($actividad['estado'] == 'calificado') ? 'status-completed' : 'status-pending';
+                ?>
+                <div class="activity-item">
+                    <div class="activity-icon">
+                        <i class="fas fa-tasks"></i>
+                    </div>
+                    <div class="activity-content">
+                        <div class="activity-title"><?php echo htmlspecialchars($actividad['titulo']); ?></div>
+                        <div class="activity-meta">
+                            <span><i class="fas fa-calendar"></i> <?php echo date('d/m/Y', strtotime($actividad['fecha_entrega'])); ?></span>
+                            <?php if($actividad['calificacion']): ?>
+                            <span><i class="fas fa-star"></i> Calificación: <?php echo $actividad['calificacion']; ?></span>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    <span class="activity-status <?php echo $status_class; ?>">
+                        <?php echo $status_text; ?>
+                    </span>
+                </div>
+                <?php endforeach; ?>
+            </div>
         </div>
-    </div>
-    <?php endif; ?>
-</div>
+        <?php endif; ?>
+        
+    </div> <!-- FIN DE main-content -->
 
-<!-- Función para ajustar brillo del color (se debe añadir al principio del PHP) -->
-<?php
-function adjustBrightness($hex, $steps) {
-    $steps = max(-255, min(255, $steps));
-    $hex = str_replace('#', '', $hex);
-    
-    if (strlen($hex) == 3) {
-        $hex = str_repeat(substr($hex,0,1), 2).str_repeat(substr($hex,1,1), 2).str_repeat(substr($hex,2,1), 2);
-    }
-    
-    $r = hexdec(substr($hex,0,2));
-    $g = hexdec(substr($hex,2,2));
-    $b = hexdec(substr($hex,4,2));
-    
-    $r = max(0, min(255, $r + $steps));
-    $g = max(0, min(255, $g + $steps));
-    $b = max(0, min(255, $b + $steps));
-    
-    $r_hex = str_pad(dechex($r), 2, '0', STR_PAD_LEFT);
-    $g_hex = str_pad(dechex($g), 2, '0', STR_PAD_LEFT);
-    $b_hex = str_pad(dechex($b), 2, '0', STR_PAD_LEFT);
-    
-    return '#'.$r_hex.$g_hex.$b_hex;
-}
-?>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script>
-    // Toggle del menú en móvil
-    $(document).ready(function() {
-        $('.menu-toggle').click(function() {
-            $('.sidebar-kid').toggleClass('active');
-        });
-        
-        // Animaciones al cargar
-        $('.fade-in-up').each(function(index) {
-            $(this).css('animation-delay', (index * 0.1) + 's');
-        });
-        
-        // Efecto en el avatar
-        $('#kidAvatar').hover(
-            function() {
-                $(this).css('transform', 'scale(1.1) rotate(5deg)');
-            },
-            function() {
-                $(this).css('transform', 'scale(1) rotate(0deg)');
-            }
-        );
-        
-        // Animación para las barras de progreso
-        $('.progress-bar-fill').each(function() {
-            var width = $(this).css('width');
-            $(this).css('width', '0');
-            setTimeout(() => {
-                $(this).css('width', width);
-            }, 300);
-        });
-        
-        // Cerrar menú al hacer clic en enlace en móvil
-        if ($(window).width() < 992) {
-            $('.nav-link').click(function() {
-                $('.sidebar-kid').removeClass('active');
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            $('.menu-toggle').click(function() {
+                $('.sidebar-kid').toggleClass('active');
             });
-        }
-    });
-</script>
+            
+            $('.fade-in-up').each(function(index) {
+                $(this).css('animation-delay', (index * 0.1) + 's');
+            });
+            
+            $('#kidAvatar').hover(
+                function() {
+                    $(this).css('transform', 'scale(1.1) rotate(5deg)');
+                },
+                function() {
+                    $(this).css('transform', 'scale(1) rotate(0deg)');
+                }
+            );
+            
+            $('.progress-bar-fill').each(function() {
+                var width = $(this).css('width');
+                $(this).css('width', '0');
+                setTimeout(() => {
+                    $(this).css('width', width);
+                }, 300);
+            });
+            
+            if ($(window).width() < 992) {
+                $('.nav-link').click(function() {
+                    $('.sidebar-kid').removeClass('active');
+                });
+            }
+        });
+    </script>
 </body>
 </html>

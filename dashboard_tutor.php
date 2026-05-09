@@ -9,45 +9,77 @@ if (!isset($_SESSION['user_id']) || $_SESSION['tipo'] != 'tutor') {
 }
 
 $tutor_id = $_SESSION['user_id'];
+$tutor_nombre = $_SESSION['nombre'];
 
-// --- OPTIMIZACIÓN: Consultas combinadas para mejor rendimiento ---
-$queries = [
-    'cursos' => "SELECT COUNT(*) as total FROM cursos WHERE id_tutor = '$tutor_id'",
-    'alumnos' => "SELECT COUNT(DISTINCT id_alumno) as total FROM inscripciones i 
-                   JOIN cursos c ON i.id_curso = c.id WHERE c.id_tutor = '$tutor_id'",
-    'pendientes' => "SELECT COUNT(*) as total FROM entregas e
-                     JOIN actividades a ON e.id_actividad = a.id
-                     JOIN cursos c ON a.id_curso = c.id
-                     WHERE c.id_tutor = '$tutor_id' AND e.estado = 'pendiente'"
+// --- CONSULTAS CORREGIDAS PARA POSTGRESQL usando PDO ---
+$stats = [
+    'cursos' => 0,
+    'alumnos' => 0,
+    'pendientes' => 0
 ];
 
-$stats = [];
-foreach ($queries as $key => $sql) {
-    $res = mysqli_query($conn, $sql);
-    $stats[$key] = mysqli_fetch_assoc($res)['total'];
-    mysqli_free_result($res);
+try {
+    // 1. Total de cursos del tutor
+    $stmt = $conn->pdo->prepare("SELECT COUNT(*) as total FROM cursos WHERE id_tutor = :tutor_id");
+    $stmt->execute([':tutor_id' => $tutor_id]);
+    $stats['cursos'] = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+    
+    // 2. Total de alumnos inscritos en cursos del tutor
+    $stmt = $conn->pdo->prepare("
+        SELECT COUNT(DISTINCT i.id_alumno) as total 
+        FROM inscripciones i 
+        JOIN cursos c ON i.id_curso = c.id 
+        WHERE c.id_tutor = :tutor_id
+    ");
+    $stmt->execute([':tutor_id' => $tutor_id]);
+    $stats['alumnos'] = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+    
+    // 3. Total de entregas pendientes
+    $stmt = $conn->pdo->prepare("
+        SELECT COUNT(*) as total 
+        FROM entregas e
+        JOIN actividades a ON e.id_actividad = a.id
+        JOIN cursos c ON a.id_curso = c.id
+        WHERE c.id_tutor = :tutor_id AND e.estado = 'pendiente'
+    ");
+    $stmt->execute([':tutor_id' => $tutor_id]);
+    $stats['pendientes'] = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+    
+} catch(PDOException $e) {
+    // Si hay error, las estadísticas quedan en 0
+    error_log("Error en dashboard_tutor: " . $e->getMessage());
 }
 
 // Obtener lista de cursos con información adicional
-$query_lista = "SELECT c.*, COUNT(i.id) as inscritos 
-                FROM cursos c 
-                LEFT JOIN inscripciones i ON c.id = i.id_curso 
-                WHERE c.id_tutor = '$tutor_id' 
-                GROUP BY c.id 
-                ORDER BY c.fecha_creacion DESC";
-$res_lista = mysqli_query($conn, $query_lista);
+try {
+    $stmt = $conn->pdo->prepare("
+        SELECT c.*, COUNT(i.id) as inscritos 
+        FROM cursos c 
+        LEFT JOIN inscripciones i ON c.id = i.id_curso 
+        WHERE c.id_tutor = :tutor_id 
+        GROUP BY c.id 
+        ORDER BY c.fecha_creacion DESC
+    ");
+    $stmt->execute([':tutor_id' => $tutor_id]);
+    $cursos_lista = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch(PDOException $e) {
+    $cursos_lista = [];
+}
 
 // Datos para gráfico (cursos vs alumnos)
-$query_grafico = "SELECT c.nombre, COUNT(i.id) as alumnos 
-                  FROM cursos c 
-                  LEFT JOIN inscripciones i ON c.id = i.id_curso 
-                  WHERE c.id_tutor = '$tutor_id' 
-                  GROUP BY c.id 
-                  LIMIT 5";
-$res_grafico = mysqli_query($conn, $query_grafico);
-$datos_grafico = [];
-while($row = mysqli_fetch_assoc($res_grafico)) {
-    $datos_grafico[] = $row;
+try {
+    $stmt = $conn->pdo->prepare("
+        SELECT c.nombre, COUNT(i.id) as alumnos 
+        FROM cursos c 
+        LEFT JOIN inscripciones i ON c.id = i.id_curso 
+        WHERE c.id_tutor = :tutor_id 
+        GROUP BY c.id, c.nombre
+        LIMIT 5
+    ");
+    $stmt->execute([':tutor_id' => $tutor_id]);
+    $datos_grafico = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch(PDOException $e) {
+    $datos_grafico = [];
 }
 ?>
 <!DOCTYPE html>
@@ -881,8 +913,8 @@ while($row = mysqli_fetch_assoc($res_grafico)) {
                         </tr>
                     </thead>
                     <tbody>
-                        <?php if(mysqli_num_rows($res_lista) > 0): ?>
-                            <?php while($c = mysqli_fetch_assoc($res_lista)): ?>
+                        <?php if(count($cursos_lista) > 0): ?>
+                            <?php foreach($cursos_lista as $c): ?>
                             <tr>
                                 <td class="fw-bold">
                                     <div class="d-flex align-items-center">
@@ -900,7 +932,7 @@ while($row = mysqli_fetch_assoc($res_grafico)) {
                                 <td>
                                     <?php 
                                     $badge_class = '';
-                                    switch(strtolower($c['nivel'])) {
+                                    switch(strtolower($c['nivel'] ?? '')) {
                                         case 'básico': $badge_class = 'explore-badge'; break;
                                         case 'intermedio': $badge_class = 'create-badge'; break;
                                         case 'avanzado': $badge_class = 'learn-badge'; break;
@@ -908,11 +940,11 @@ while($row = mysqli_fetch_assoc($res_grafico)) {
                                     }
                                     ?>
                                     <span class="badge badge-level <?php echo $badge_class; ?>">
-                                        <i class="fas fa-level-up-alt me-1"></i><?php echo htmlspecialchars($c['nivel']); ?>
+                                        <i class="fas fa-level-up-alt me-1"></i><?php echo htmlspecialchars($c['nivel'] ?? 'Básico'); ?>
                                     </span>
                                 </td>
                                 <td>
-                                    <?php if($c['activo']): ?>
+                                    <?php if($c['activo'] ?? false): ?>
                                         <span class="text-success fw-bold">
                                             <i class="fas fa-check-circle text-success me-2"></i>Explorando
                                         </span>
@@ -926,13 +958,13 @@ while($row = mysqli_fetch_assoc($res_grafico)) {
                                     <div class="d-flex align-items-center">
                                         <div class="progress flex-grow-1 me-3 progress-bar-custom">
                                             <?php 
-                                            $porcentaje = $c['inscritos'] > 0 ? min(($c['inscritos'] / 20) * 100, 100) : 0;
+                                            $porcentaje = ($c['inscritos'] ?? 0) > 0 ? min((($c['inscritos'] ?? 0) / 20) * 100, 100) : 0;
                                             $color = $porcentaje < 30 ? 'bg-warning' : ($porcentaje < 70 ? 'bg-info' : 'bg-success');
                                             ?>
                                             <div class="progress-bar <?php echo $color; ?>" style="width: <?php echo $porcentaje; ?>%"></div>
                                         </div>
                                         <div class="text-center">
-                                            <span class="fw-bold d-block"><?php echo $c['inscritos']; ?></span>
+                                            <span class="fw-bold d-block"><?php echo $c['inscritos'] ?? 0; ?></span>
                                             <small class="text-muted">niños</small>
                                         </div>
                                     </div>
@@ -945,7 +977,7 @@ while($row = mysqli_fetch_assoc($res_grafico)) {
                                     </div>
                                 </td>
                             </tr>
-                            <?php endwhile; ?>
+                            <?php endforeach; ?>
                         <?php else: ?>
                             <tr>
                                 <td colspan="5" class="text-center py-5">

@@ -3,6 +3,9 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
+include 'php/config.php';
+session_start();
+
 // Función para mostrar errores con diseño personalizado
 function mostrarErrorConDiseño($titulo, $mensaje, $tipo = 'error') {
     $colores = [
@@ -78,9 +81,6 @@ function registrarErrorPersonalizado($mensaje, $tipo = 'error') {
     file_put_contents($error_file, $log_entry, FILE_APPEND);
 }
 
-// Manejar errores de MySQL de forma elegante
-mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-
 // Configurar manejador de errores personalizado
 set_error_handler(function($errno, $errstr, $errfile, $errline) {
     $error_types = [
@@ -94,24 +94,18 @@ set_error_handler(function($errno, $errstr, $errfile, $errline) {
     
     $error_type = $error_types[$errno] ?? 'Unknown Error';
     
-    // Registrar en archivo de log
     registrarErrorPersonalizado("$error_type: $errstr in $errfile on line $errline", strtolower($error_type));
     
-    // Mostrar error con diseño solo si estamos en desarrollo
     if (ini_get('display_errors')) {
         echo mostrarErrorConDiseño($error_type, "$errstr\nArchivo: $errfile\nLínea: $errline");
     }
     
-    // No ejecutar el manejador interno de errores de PHP
     return true;
 });
 
-// Manejar excepciones no capturadas
 set_exception_handler(function($exception) {
-    // Registrar en archivo de log
     registrarErrorPersonalizado("Excepción: " . $exception->getMessage() . " en " . $exception->getFile() . ":" . $exception->getLine(), 'exception');
     
-    // Mostrar error con diseño solo si estamos en desarrollo
     if (ini_get('display_errors')) {
         echo mostrarErrorConDiseño('Excepción no capturada', 
             $exception->getMessage() . "\n" .
@@ -121,19 +115,6 @@ set_exception_handler(function($exception) {
         );
     }
 });
-
-try {
-    include 'php/config.php';
-} catch (mysqli_sql_exception $e) {
-    echo mostrarErrorConDiseño('Error de Conexión a la Base de Datos', 
-        "No se pudo conectar a la base de datos.\n" .
-        "Error: " . $e->getMessage() . "\n" .
-        "Código: " . $e->getCode()
-    );
-    exit();
-}
-
-session_start();
 
 if (!isset($_SESSION['user_id']) || $_SESSION['tipo'] != 'tutor') {
     header("Location: index.php");
@@ -149,16 +130,14 @@ if ($entrega_id == 0) {
     exit();
 }
 
-// Verificar si la tabla usuarios tiene la columna 'puntos'
+// Verificar si la tabla usuarios tiene la columna 'puntos' (PostgreSQL)
 try {
-    $sql_check_puntos = "SHOW COLUMNS FROM usuarios LIKE 'puntos'";
-    $res_check_puntos = mysqli_query($conn, $sql_check_puntos);
-    $tiene_columna_puntos = mysqli_num_rows($res_check_puntos) > 0;
-} catch (mysqli_sql_exception $e) {
-    // Si hay error al verificar la columna, asumimos que no existe
+    $stmt = $conn->pdo->prepare("SELECT column_name FROM information_schema.columns WHERE table_name='usuarios' AND column_name='puntos'");
+    $stmt->execute();
+    $tiene_columna_puntos = $stmt->rowCount() > 0;
+} catch (PDOException $e) {
     $tiene_columna_puntos = false;
-    $error_puntos = $e->getMessage();
-    registrarErrorPersonalizado("Error al verificar columna 'puntos': " . $error_puntos, 'warning');
+    registrarErrorPersonalizado("Error al verificar columna 'puntos': " . $e->getMessage(), 'warning');
 }
 
 // Obtener información de la entrega
@@ -180,33 +159,31 @@ try {
                         ev.calificacion,
                         ev.comentarios as comentarios_tutor,
                         ev.fecha_evaluacion,
-                        DATEDIFF(a.fecha_limite, CURDATE()) as dias_restantes
+                        (a.fecha_limite::date - CURRENT_DATE) as dias_restantes
                     FROM entregas e
                     JOIN usuarios u ON e.id_alumno = u.id
                     JOIN actividades a ON e.id_actividad = a.id
                     JOIN cursos c ON a.id_curso = c.id
                     LEFT JOIN evaluaciones ev ON e.id = ev.id_entrega
-                    WHERE e.id = '$entrega_id'";
-
-    $res_entrega = mysqli_query($conn, $sql_entrega);
-
-    if (mysqli_num_rows($res_entrega) == 0) {
+                    WHERE e.id = :entrega_id";
+    
+    $stmt = $conn->pdo->prepare($sql_entrega);
+    $stmt->execute([':entrega_id' => $entrega_id]);
+    
+    if ($stmt->rowCount() == 0) {
         header("Location: dashboard_tutor.php");
         exit();
     }
 
-    $entrega = mysqli_fetch_assoc($res_entrega);
+    $entrega = $stmt->fetch(PDO::FETCH_ASSOC);
 
     // Verificar que el tutor sea el dueño del curso
     if ($entrega['id_tutor'] != $tutor_id) {
         header("Location: dashboard_tutor.php");
         exit();
     }
-} catch (mysqli_sql_exception $e) {
-    echo mostrarErrorConDiseño('Error al obtener información de la entrega', 
-        $e->getMessage() . "\n" .
-        "Consulta SQL: " . $sql_entrega
-    );
+} catch (PDOException $e) {
+    echo mostrarErrorConDiseño('Error al obtener información de la entrega', $e->getMessage());
     exit();
 }
 
@@ -218,120 +195,121 @@ $warning = '';
 // Procesar calificación si se envió el formulario
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $calificacion = isset($_POST['calificacion']) ? floatval($_POST['calificacion']) : 0;
-    $comentarios = isset($_POST['comentarios']) ? mysqli_real_escape_string($conn, $_POST['comentarios']) : '';
+    $comentarios = isset($_POST['comentarios']) ? trim($_POST['comentarios']) : '';
     $estado = $calificacion > 0 ? 'calificado' : 'pendiente';
     
-    // Validar calificación (0-10)
     if ($calificacion < 0 || $calificacion > 10) {
         $error = "La calificación debe estar entre 0 y 10";
     } else {
-        // Iniciar transacción
-        mysqli_begin_transaction($conn);
-        
         try {
-            // Verificar si ya existe una evaluación
-            $sql_check = "SELECT id FROM evaluaciones WHERE id_entrega = '$entrega_id'";
-            $res_check = mysqli_query($conn, $sql_check);
+            $conn->pdo->beginTransaction();
             
-            if (mysqli_num_rows($res_check) > 0) {
+            // Verificar si ya existe una evaluación
+            $stmt_check = $conn->pdo->prepare("SELECT id FROM evaluaciones WHERE id_entrega = :id_entrega");
+            $stmt_check->execute([':id_entrega' => $entrega_id]);
+            
+            if ($stmt_check->rowCount() > 0) {
                 // Obtener calificación anterior
-                $sql_old_grade = "SELECT calificacion FROM evaluaciones WHERE id_entrega = '$entrega_id'";
-                $res_old_grade = mysqli_query($conn, $sql_old_grade);
-                $old_grade = mysqli_fetch_assoc($res_old_grade)['calificacion'];
+                $stmt_old = $conn->pdo->prepare("SELECT calificacion FROM evaluaciones WHERE id_entrega = :id_entrega");
+                $stmt_old->execute([':id_entrega' => $entrega_id]);
+                $old_grade = $stmt_old->fetch(PDO::FETCH_ASSOC)['calificacion'];
                 
                 // Actualizar evaluación existente
-                $sql_update = "UPDATE evaluaciones 
-                              SET calificacion = '$calificacion', 
-                                  comentarios = '$comentarios',
-                                  fecha_evaluacion = NOW()
-                              WHERE id_entrega = '$entrega_id'";
-                
-                mysqli_query($conn, $sql_update);
+                $stmt_update = $conn->pdo->prepare("
+                    UPDATE evaluaciones 
+                    SET calificacion = :calificacion, 
+                        comentarios = :comentarios,
+                        fecha_evaluacion = CURRENT_TIMESTAMP
+                    WHERE id_entrega = :id_entrega
+                ");
+                $stmt_update->execute([
+                    ':calificacion' => $calificacion,
+                    ':comentarios' => $comentarios,
+                    ':id_entrega' => $entrega_id
+                ]);
                 
                 // Si había puntos anteriormente y la tabla tiene la columna
                 if ($tiene_columna_puntos && $old_grade >= 6 && $calificacion < 6) {
-                    // Quitar puntos
                     $sql_remove_points = "UPDATE usuarios 
-                                         SET puntos = IF(puntos - {$entrega['puntos_actividad']} < 0, 0, puntos - {$entrega['puntos_actividad']})
-                                         WHERE id = '{$entrega['alumno_id']}'";
-                    mysqli_query($conn, $sql_remove_points);
+                                         SET puntos = GREATEST(puntos - :puntos, 0)
+                                         WHERE id = :alumno_id";
+                    $stmt_remove = $conn->pdo->prepare($sql_remove_points);
+                    $stmt_remove->execute([
+                        ':puntos' => $entrega['puntos_actividad'],
+                        ':alumno_id' => $entrega['alumno_id']
+                    ]);
                     $warning = "Se han retirado los puntos porque la nueva calificación es menor a 6";
                 }
             } else {
                 // Insertar nueva evaluación
-                $sql_insert = "INSERT INTO evaluaciones (id_entrega, calificacion, comentarios, fecha_evaluacion)
-                              VALUES ('$entrega_id', '$calificacion', '$comentarios', NOW())";
-                
-                mysqli_query($conn, $sql_insert);
+                $stmt_insert = $conn->pdo->prepare("
+                    INSERT INTO evaluaciones (id_entrega, calificacion, comentarios, fecha_evaluacion)
+                    VALUES (:id_entrega, :calificacion, :comentarios, CURRENT_TIMESTAMP)
+                ");
+                $stmt_insert->execute([
+                    ':id_entrega' => $entrega_id,
+                    ':calificacion' => $calificacion,
+                    ':comentarios' => $comentarios
+                ]);
             }
             
             // Actualizar estado de la entrega
-            $sql_update_entrega = "UPDATE entregas SET estado = '$estado' WHERE id = '$entrega_id'";
-            mysqli_query($conn, $sql_update_entrega);
+            $stmt_update_entrega = $conn->pdo->prepare("UPDATE entregas SET estado = :estado WHERE id = :id_entrega");
+            $stmt_update_entrega->execute([
+                ':estado' => $estado,
+                ':id_entrega' => $entrega_id
+            ]);
             
             // Calcular puntos ganados (si la calificación es 6 o más)
             $puntos_ganados = 0;
             if ($calificacion >= 6) {
                 $puntos_ganados = $entrega['puntos_actividad'];
                 
-                // Actualizar puntos del alumno si la tabla tiene la columna
                 if ($tiene_columna_puntos) {
-                    $sql_update_puntos = "UPDATE usuarios 
-                                         SET puntos = IFNULL(puntos, 0) + $puntos_ganados 
-                                         WHERE id = '{$entrega['alumno_id']}'";
-                    
-                    mysqli_query($conn, $sql_update_puntos);
+                    $stmt_update_puntos = $conn->pdo->prepare("
+                        UPDATE usuarios 
+                        SET puntos = COALESCE(puntos, 0) + :puntos 
+                        WHERE id = :alumno_id
+                    ");
+                    $stmt_update_puntos->execute([
+                        ':puntos' => $puntos_ganados,
+                        ':alumno_id' => $entrega['alumno_id']
+                    ]);
                     
                     // Registrar en el log de puntos
-                    $sql_log = "INSERT INTO puntos_log (id_usuario, puntos, tipo, descripcion)
-                               VALUES ('{$entrega['alumno_id']}', '$puntos_ganados', 'actividad', 'Calificación de actividad: {$entrega['actividad_titulo']}')";
-                    mysqli_query($conn, $sql_log);
+                    $stmt_log = $conn->pdo->prepare("
+                        INSERT INTO puntos_log (id_usuario, puntos, tipo, descripcion)
+                        VALUES (:id_usuario, :puntos, 'actividad', :descripcion)
+                    ");
+                    $stmt_log->execute([
+                        ':id_usuario' => $entrega['alumno_id'],
+                        ':puntos' => $puntos_ganados,
+                        ':descripcion' => 'Calificación de actividad: ' . $entrega['actividad_titulo']
+                    ]);
                 }
             }
             
-            // Confirmar transacción
-            mysqli_commit($conn);
+            $conn->pdo->commit();
             
             $success = "Entrega calificada exitosamente" . 
                       ($puntos_ganados > 0 && $tiene_columna_puntos ? " - El alumno ha ganado $puntos_ganados puntos" : "") .
                       ($warning ? "<br>" . $warning : "");
             
             // Actualizar datos de la entrega
-            $res_entrega = mysqli_query($conn, $sql_entrega);
-            $entrega = mysqli_fetch_assoc($res_entrega);
+            $stmt->execute([':entrega_id' => $entrega_id]);
+            $entrega = $stmt->fetch(PDO::FETCH_ASSOC);
             
-        } catch (mysqli_sql_exception $e) {
-            // Revertir transacción
-            mysqli_rollback($conn);
-            $error = "Error en el sistema: " . $e->getMessage();
-            
-            // Mostrar error detallado con diseño
-            $error_detallado = "Error MySQL:\n" .
-                             "Mensaje: " . $e->getMessage() . "\n" .
-                             "Código: " . $e->getCode() . "\n" .
-                             "Consulta que falló:\n";
-            
-            // Determinar qué consulta falló basado en el mensaje de error
-            if (strpos($e->getMessage(), 'UPDATE evaluaciones') !== false) {
-                $error_detallado .= isset($sql_update) ? $sql_update : "UPDATE evaluaciones...";
-            } elseif (strpos($e->getMessage(), 'INSERT INTO evaluaciones') !== false) {
-                $error_detallado .= isset($sql_insert) ? $sql_insert : "INSERT INTO evaluaciones...";
-            } elseif (strpos($e->getMessage(), 'UPDATE entregas') !== false) {
-                $error_detallado .= isset($sql_update_entrega) ? $sql_update_entrega : "UPDATE entregas...";
-            } elseif (strpos($e->getMessage(), 'UPDATE usuarios') !== false) {
-                $error_detallado .= isset($sql_update_puntos) ? $sql_update_puntos : "UPDATE usuarios...";
-            } elseif (strpos($e->getMessage(), 'INSERT INTO puntos_log') !== false) {
-                $error_detallado .= isset($sql_log) ? $sql_log : "INSERT INTO puntos_log...";
+        } catch (PDOException $e) {
+            if ($conn->pdo->inTransaction()) {
+                $conn->pdo->rollBack();
             }
-            
-            // Mostrar error con diseño personalizado
-            echo mostrarErrorConDiseño('Error al procesar la calificación', $error_detallado);
-            
-            // Registrar en log
-            registrarErrorPersonalizado($error_detallado, 'error');
+            $error = "Error en el sistema: " . $e->getMessage();
+            registrarErrorPersonalizado($error, 'error');
+            echo mostrarErrorConDiseño('Error al procesar la calificación', $e->getMessage());
         } catch (Exception $e) {
-            // Revertir transacción para otros tipos de excepciones
-            mysqli_rollback($conn);
+            if ($conn->pdo->inTransaction()) {
+                $conn->pdo->rollBack();
+            }
             $error = "Error en el sistema: " . $e->getMessage();
             echo mostrarErrorConDiseño('Error General', $e->getMessage());
             registrarErrorPersonalizado($e->getMessage(), 'error');
@@ -365,7 +343,6 @@ function getActividadIcono($tipo) {
     return $iconos[$tipo] ?? 'fas fa-tasks';
 }
 
-// Función para obtener color de calificación
 function getCalificacionColor($calificacion) {
     if ($calificacion === null) return 'secondary';
     if ($calificacion >= 9) return 'success';
@@ -374,7 +351,6 @@ function getCalificacionColor($calificacion) {
     return 'danger';
 }
 
-// Función para obtener texto de calificación
 function getCalificacionTexto($calificacion) {
     if ($calificacion === null) return 'Sin calificar';
     if ($calificacion >= 9) return 'Excelente';
@@ -383,7 +359,6 @@ function getCalificacionTexto($calificacion) {
     return 'Necesita mejorar';
 }
 
-// Función para formatear fecha
 function formatFecha($fecha) {
     if (!$fecha) return 'No especificada';
     $fecha_obj = new DateTime($fecha);

@@ -1,5 +1,5 @@
 <?php
-// configuracion_cuenta.php
+// configuracion_cuenta.php - CORREGIDO PARA POSTGRESQL
 include 'php/config.php';
 session_start();
 
@@ -18,17 +18,25 @@ $success = '';
 $error = '';
 $warning = '';
 
-// Obtener datos actuales del tutor
-$query_tutor = "SELECT * FROM usuarios WHERE id = '$tutor_id'";
-$result_tutor = mysqli_query($conn, $query_tutor);
-$tutor = mysqli_fetch_assoc($result_tutor);
+// Obtener datos actuales del tutor usando PDO
+try {
+    $stmt = $conn->pdo->prepare("SELECT * FROM usuarios WHERE id = :id AND tipo = 'tutor'");
+    $stmt->execute([':id' => $tutor_id]);
+    $tutor = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$tutor) {
+        die("Tutor no encontrado.");
+    }
+} catch(PDOException $e) {
+    die("Error al cargar datos: " . $e->getMessage());
+}
 
 // Procesar actualización de datos generales
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['actualizar_datos'])) {
-    $nuevo_nombre = mysqli_real_escape_string($conn, trim($_POST['nombre']));
-    $nuevo_email = mysqli_real_escape_string($conn, trim($_POST['email']));
-    $telefono = mysqli_real_escape_string($conn, trim($_POST['telefono'] ?? ''));
-    $fecha_nacimiento = mysqli_real_escape_string($conn, trim($_POST['fecha_nacimiento'] ?? ''));
+    $nuevo_nombre = trim($_POST['nombre'] ?? '');
+    $nuevo_email = trim($_POST['email'] ?? '');
+    $telefono = trim($_POST['telefono'] ?? '');
+    $fecha_nacimiento = !empty($_POST['fecha_nacimiento']) ? $_POST['fecha_nacimiento'] : null;
     
     // Validaciones
     if (empty($nuevo_nombre)) {
@@ -36,22 +44,32 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['actualizar_datos'])) {
     } elseif (!filter_var($nuevo_email, FILTER_VALIDATE_EMAIL)) {
         $error = "El email no es válido";
     } else {
-        // Verificar si el email ya existe (excluyendo al tutor actual)
-        $check_email = "SELECT id FROM usuarios WHERE email = '$nuevo_email' AND id != '$tutor_id'";
-        $result_check = mysqli_query($conn, $check_email);
-        
-        if (mysqli_num_rows($result_check) > 0) {
-            $error = "Este email ya está registrado por otro usuario";
-        } else {
-            // Preparar consulta de actualización (solo con campos existentes)
-            $update_query = "UPDATE usuarios SET 
-                            nombre = '$nuevo_nombre',
-                            email = '$nuevo_email',
-                            telefono = '$telefono',
-                            fecha_nacimiento = " . ($fecha_nacimiento ? "'$fecha_nacimiento'" : "NULL") . "
-                            WHERE id = '$tutor_id'";
+        try {
+            // Verificar si el email ya existe (excluyendo al tutor actual)
+            $check_email = $conn->pdo->prepare("SELECT id FROM usuarios WHERE email = :email AND id != :id");
+            $check_email->execute([':email' => $nuevo_email, ':id' => $tutor_id]);
             
-            if (mysqli_query($conn, $update_query)) {
+            if ($check_email->rowCount() > 0) {
+                $error = "Este email ya está registrado por otro usuario";
+            } else {
+                // Preparar consulta de actualización
+                $update_query = $conn->pdo->prepare("
+                    UPDATE usuarios SET 
+                        nombre = :nombre,
+                        email = :email,
+                        telefono = :telefono,
+                        fecha_nacimiento = :fecha_nacimiento
+                    WHERE id = :id
+                ");
+                
+                $update_query->execute([
+                    ':nombre' => $nuevo_nombre,
+                    ':email' => $nuevo_email,
+                    ':telefono' => $telefono,
+                    ':fecha_nacimiento' => $fecha_nacimiento,
+                    ':id' => $tutor_id
+                ]);
+                
                 // Actualizar sesión
                 $_SESSION['nombre'] = $nuevo_nombre;
                 $_SESSION['email'] = $nuevo_email;
@@ -65,18 +83,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['actualizar_datos'])) {
                 $tutor['fecha_nacimiento'] = $fecha_nacimiento;
                 
                 $success = "Datos actualizados correctamente";
-            } else {
-                $error = "Error al actualizar los datos: " . mysqli_error($conn);
             }
+        } catch(PDOException $e) {
+            $error = "Error al actualizar los datos: " . $e->getMessage();
         }
     }
 }
 
 // Procesar cambio de contraseña
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['cambiar_password'])) {
-    $password_actual = $_POST['password_actual'];
-    $password_nueva = $_POST['password_nueva'];
-    $password_confirmar = $_POST['password_confirmar'];
+    $password_actual = $_POST['password_actual'] ?? '';
+    $password_nueva = $_POST['password_nueva'] ?? '';
+    $password_confirmar = $_POST['password_confirmar'] ?? '';
     
     // Validaciones
     if (empty($password_actual) || empty($password_nueva) || empty($password_confirmar)) {
@@ -86,61 +104,63 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['cambiar_password'])) {
     } elseif (strlen($password_nueva) < 6) {
         $error = "La nueva contraseña debe tener al menos 6 caracteres";
     } else {
-        // Verificar contraseña actual
-        $check_password = "SELECT password FROM usuarios WHERE id = '$tutor_id'";
-        $result_check = mysqli_query($conn, $check_password);
-        $user_data = mysqli_fetch_assoc($result_check);
-        
-        if (password_verify($password_actual, $user_data['password'])) {
-            // Encriptar nueva contraseña
-            $password_hash = password_hash($password_nueva, PASSWORD_DEFAULT);
+        try {
+            // Verificar contraseña actual
+            $check_password = $conn->pdo->prepare("SELECT password FROM usuarios WHERE id = :id");
+            $check_password->execute([':id' => $tutor_id]);
+            $user_data = $check_password->fetch(PDO::FETCH_ASSOC);
             
-            // Actualizar contraseña
-            $update_password = "UPDATE usuarios SET 
-                               password = '$password_hash'
-                               WHERE id = '$tutor_id'";
-            
-            if (mysqli_query($conn, $update_password)) {
+            if (password_verify($password_actual, $user_data['password'])) {
+                // Encriptar nueva contraseña
+                $password_hash = password_hash($password_nueva, PASSWORD_DEFAULT);
+                
+                // Actualizar contraseña
+                $update_password = $conn->pdo->prepare("UPDATE usuarios SET password = :password WHERE id = :id");
+                $update_password->execute([':password' => $password_hash, ':id' => $tutor_id]);
+                
                 $success = "Contraseña cambiada exitosamente";
             } else {
-                $error = "Error al cambiar la contraseña: " . mysqli_error($conn);
+                $error = "La contraseña actual es incorrecta";
             }
-        } else {
-            $error = "La contraseña actual es incorrecta";
+        } catch(PDOException $e) {
+            $error = "Error al cambiar la contraseña: " . $e->getMessage();
         }
     }
 }
 
-// Procesar eliminación de cuenta (con confirmación previa)
+// Procesar eliminación de cuenta
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['eliminar_cuenta'])) {
     $confirmacion = $_POST['confirmacion'] ?? '';
     
     if ($confirmacion === 'ELIMINAR') {
-        // Verificar si el tutor tiene cursos activos
-        $check_cursos = "SELECT COUNT(*) as total FROM cursos WHERE id_tutor = '$tutor_id' AND activo = 1";
-        $result_cursos = mysqli_query($conn, $check_cursos);
-        $cursos_activos = mysqli_fetch_assoc($result_cursos)['total'];
-        
-        if ($cursos_activos > 0) {
-            $error = "No puedes eliminar tu cuenta mientras tengas cursos activos. Primero inactívalos o transfiérelos.";
-        } else {
-            // Marcar cuenta como inactiva (no eliminar físicamente)
-            $deactivate_query = "UPDATE usuarios SET 
-                                activo = 0
-                                WHERE id = '$tutor_id'";
+        try {
+            // Verificar si el tutor tiene cursos activos
+            $check_cursos = $conn->pdo->prepare("SELECT COUNT(*) as total FROM cursos WHERE id_tutor = :id_tutor AND activo = TRUE");
+            $check_cursos->execute([':id_tutor' => $tutor_id]);
+            $cursos_activos = $check_cursos->fetch(PDO::FETCH_ASSOC)['total'];
             
-            if (mysqli_query($conn, $deactivate_query)) {
+            if ($cursos_activos > 0) {
+                $error = "No puedes eliminar tu cuenta mientras tengas cursos activos. Primero inactívalos o transfiérelos.";
+            } else {
+                // Marcar cuenta como inactiva (no eliminar físicamente)
+                $deactivate_query = $conn->pdo->prepare("UPDATE usuarios SET activo = FALSE WHERE id = :id");
+                $deactivate_query->execute([':id' => $tutor_id]);
+                
                 session_destroy();
                 header("Location: index.php?account_deleted=1");
                 exit();
-            } else {
-                $error = "Error al eliminar la cuenta: " . mysqli_error($conn);
             }
+        } catch(PDOException $e) {
+            $error = "Error al eliminar la cuenta: " . $e->getMessage();
         }
     } else {
         $error = "Debes escribir 'ELIMINAR' para confirmar la eliminación";
     }
 }
+
+// Calcular fecha de registro (si existe)
+$fecha_registro = $tutor['fecha_registro'] ?? null;
+$fecha_formateada = $fecha_registro ? date('d/m/Y', strtotime($fecha_registro)) : 'No disponible';
 ?>
 
 <!DOCTYPE html>

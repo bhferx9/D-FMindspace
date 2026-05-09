@@ -7,87 +7,92 @@ if (!isset($_SESSION['user_id']) || !in_array($_SESSION['tipo'], ['tutor', 'alum
     exit();
 }
 
-$usuario_id = $_SESSION['user_id'];
+$usuario_id = (int)$_SESSION['user_id'];
 $usuario_tipo = $_SESSION['tipo'];
-$entrega_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
+$entrega_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
 if ($entrega_id == 0) {
     header("Location: dashboard_" . $usuario_tipo . ".php");
     exit();
 }
 
-// Obtener información de la entrega con validación de permisos
-$sql_entrega = "SELECT 
-                    e.*,
-                    u.nombre as alumno_nombre,
-                    u.email as alumno_email,
-                    u.id as alumno_id,
-                    a.titulo as actividad_titulo,
-                    a.descripcion as actividad_descripcion,
-                    a.tipo as actividad_tipo,
-                    a.dificultad,
-                    a.fecha_limite,
-                    a.puntos as puntos_actividad,
-                    a.id_curso,
-                    c.nombre as curso_nombre,
-                    c.id_tutor,
-                    c.descripcion as curso_descripcion,
-                    ev.calificacion,
-                    ev.comentarios as comentarios_tutor,
-                    ev.fecha_evaluacion,
-                    tu.nombre as tutor_nombre,
-                    DATEDIFF(a.fecha_limite, CURDATE()) as dias_restantes
-                FROM entregas e
-                JOIN usuarios u ON e.id_alumno = u.id
-                JOIN actividades a ON e.id_actividad = a.id
-                JOIN cursos c ON a.id_curso = c.id
-                LEFT JOIN evaluaciones ev ON e.id = ev.id_entrega
-                LEFT JOIN usuarios tu ON c.id_tutor = tu.id
-                WHERE e.id = '$entrega_id'";
-
-$res_entrega = mysqli_query($conn, $sql_entrega);
-
-if (mysqli_num_rows($res_entrega) == 0) {
+try {
+    // Obtener información de la entrega con validación de permisos (PostgreSQL)
+    $sql_entrega = "SELECT 
+                        e.*,
+                        u.nombre as alumno_nombre,
+                        u.email as alumno_email,
+                        u.id as alumno_id,
+                        a.titulo as actividad_titulo,
+                        a.descripcion as actividad_descripcion,
+                        a.tipo as actividad_tipo,
+                        a.dificultad,
+                        a.fecha_limite,
+                        a.puntos as puntos_actividad,
+                        a.id_curso,
+                        c.nombre as curso_nombre,
+                        c.id_tutor,
+                        c.descripcion as curso_descripcion,
+                        ev.calificacion,
+                        ev.comentarios as comentarios_tutor,
+                        ev.fecha_evaluacion,
+                        tu.nombre as tutor_nombre,
+                        (a.fecha_limite::date - CURRENT_DATE) as dias_restantes
+                    FROM entregas e
+                    JOIN usuarios u ON e.id_alumno = u.id
+                    JOIN actividades a ON e.id_actividad = a.id
+                    JOIN cursos c ON a.id_curso = c.id
+                    LEFT JOIN evaluaciones ev ON e.id = ev.id_entrega
+                    LEFT JOIN usuarios tu ON c.id_tutor = tu.id
+                    WHERE e.id = :entrega_id";
+    
+    $stmt = $conn->pdo->prepare($sql_entrega);
+    $stmt->execute([':entrega_id' => $entrega_id]);
+    
+    if ($stmt->rowCount() == 0) {
+        header("Location: dashboard_" . $usuario_tipo . ".php");
+        exit();
+    }
+    
+    $entrega = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    // Verificar permisos según el tipo de usuario
+    $tiene_permiso = false;
+    
+    switch ($usuario_tipo) {
+        case 'tutor':
+            if ($entrega['id_tutor'] == $usuario_id) {
+                $tiene_permiso = true;
+            }
+            break;
+            
+        case 'alumno':
+            if ($entrega['alumno_id'] == $usuario_id) {
+                $tiene_permiso = true;
+            }
+            break;
+            
+        case 'padre':
+            $stmt_hijo = $conn->pdo->prepare("SELECT id_hijo_vinculado FROM usuarios WHERE id = :id");
+            $stmt_hijo->execute([':id' => $usuario_id]);
+            $hijo_data = $stmt_hijo->fetch(PDO::FETCH_ASSOC);
+            if ($hijo_data && $hijo_data['id_hijo_vinculado'] == $entrega['alumno_id']) {
+                $tiene_permiso = true;
+            }
+            break;
+    }
+    
+    if (!$tiene_permiso) {
+        header("Location: dashboard_" . $usuario_tipo . ".php");
+        exit();
+    }
+    
+} catch(PDOException $e) {
     header("Location: dashboard_" . $usuario_tipo . ".php");
     exit();
 }
 
-$entrega = mysqli_fetch_assoc($res_entrega);
-
-// Verificar permisos según el tipo de usuario
-$tiene_permiso = false;
-
-switch ($usuario_tipo) {
-    case 'tutor':
-        // Tutor solo puede ver entregas de sus propios cursos
-        if ($entrega['id_tutor'] == $usuario_id) {
-            $tiene_permiso = true;
-        }
-        break;
-        
-    case 'alumno':
-        // Alumno solo puede ver sus propias entregas
-        if ($entrega['alumno_id'] == $usuario_id) {
-            $tiene_permiso = true;
-        }
-        break;
-        
-    case 'padre':
-        // Padre puede ver entregas de su hijo vinculado
-        $sql_hijo = "SELECT id_hijo_vinculado FROM usuarios WHERE id = '$usuario_id'";
-        $res_hijo = mysqli_query($conn, $sql_hijo);
-        if ($res_hijo && mysqli_fetch_assoc($res_hijo)['id_hijo_vinculado'] == $entrega['alumno_id']) {
-            $tiene_permiso = true;
-        }
-        break;
-}
-
-if (!$tiene_permiso) {
-    header("Location: dashboard_" . $usuario_tipo . ".php");
-    exit();
-}
-
-// Función para obtener color según el estado
+// Funciones auxiliares (no cambian)
 function getEstadoColor($estado) {
     $colores = [
         'pendiente' => 'warning',
@@ -98,7 +103,6 @@ function getEstadoColor($estado) {
     return $colores[$estado] ?? 'secondary';
 }
 
-// Función para obtener icono según el tipo de actividad
 function getActividadIcono($tipo) {
     $iconos = [
         'Quiz' => 'fas fa-question-circle',
@@ -113,7 +117,6 @@ function getActividadIcono($tipo) {
     return $iconos[$tipo] ?? 'fas fa-tasks';
 }
 
-// Función para obtener color de calificación
 function getCalificacionColor($calificacion) {
     if ($calificacion === null) return 'secondary';
     if ($calificacion >= 9) return 'success';
@@ -122,7 +125,6 @@ function getCalificacionColor($calificacion) {
     return 'danger';
 }
 
-// Función para obtener texto de calificación
 function getCalificacionTexto($calificacion) {
     if ($calificacion === null) return 'Sin calificar';
     if ($calificacion >= 9) return 'Excelente';
@@ -131,7 +133,6 @@ function getCalificacionTexto($calificacion) {
     return 'Necesita mejorar';
 }
 
-// Función para obtener color de dificultad
 function getDificultadColor($dificultad) {
     $colores = [
         'Fácil' => 'success',
@@ -142,17 +143,14 @@ function getDificultadColor($dificultad) {
     return $colores[$dificultad] ?? 'secondary';
 }
 
-// Función para formatear fecha
 function formatFecha($fecha) {
     if (!$fecha) return 'No especificada';
     $fecha_obj = new DateTime($fecha);
     return $fecha_obj->format('d/m/Y H:i');
 }
 
-// Función para formatear diferencia de tiempo
 function formatTiempoTranscurrido($fecha) {
     if (!$fecha) return '';
-    
     $fecha_entrega = new DateTime($fecha);
     $ahora = new DateTime();
     $diferencia = $fecha_entrega->diff($ahora);
@@ -169,6 +167,20 @@ function formatTiempoTranscurrido($fecha) {
 $hoy = new DateTime();
 $fecha_limite = new DateTime($entrega['fecha_limite']);
 $esta_vencida = $fecha_limite < $hoy && $entrega['estado'] == 'pendiente';
+
+// URL para volver según el tipo de usuario
+$url_volver = '';
+switch ($usuario_tipo) {
+    case 'tutor':
+        $url_volver = "detalle_alumno.php?alumno_id=" . $entrega['alumno_id'] . "&curso_id=" . $entrega['id_curso'];
+        break;
+    case 'alumno':
+        $url_volver = "dashboard_alumno.php";
+        break;
+    case 'padre':
+        $url_volver = "dashboard_padre.php";
+        break;
+}
 ?>
 
 <!DOCTYPE html>

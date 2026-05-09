@@ -7,31 +7,55 @@ if (!isset($_SESSION['user_id']) || $_SESSION['tipo'] != 'tutor') {
     exit();
 }
 
-$tutor_id = $_SESSION['user_id'];
-$curso_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
+$tutor_id = (int)$_SESSION['user_id'];
+$curso_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
 // Inicializar variables
 $curso_data = null;
 $success_message = '';
 $error_message = '';
 
-// Verificar que el curso pertenezca al tutor
-$sql_verificar = "SELECT * FROM cursos WHERE id = '$curso_id' AND id_tutor = '$tutor_id'";
-$result_verificar = mysqli_query($conn, $sql_verificar);
+// Variables para estadísticas
+$inscripciones = ['total' => 0];
+$actividades = ['total' => 0];
+$progreso = ['promedio' => 0];
 
-if (mysqli_num_rows($result_verificar) == 0 && $curso_id > 0) {
-    $error_message = "Curso no encontrado o no tienes permiso para editarlo.";
-} elseif ($curso_id > 0) {
-    $curso_data = mysqli_fetch_assoc($result_verificar);
+if ($curso_id > 0) {
+    try {
+        // Verificar que el curso pertenezca al tutor
+        $stmt = $conn->pdo->prepare("SELECT * FROM cursos WHERE id = :curso_id AND id_tutor = :tutor_id");
+        $stmt->execute([':curso_id' => $curso_id, ':tutor_id' => $tutor_id]);
+        
+        if ($stmt->rowCount() == 0) {
+            $error_message = "Curso no encontrado o no tienes permiso para editarlo.";
+        } else {
+            $curso_data = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            // Obtener estadísticas del curso
+            $stmt_insc = $conn->pdo->prepare("SELECT COUNT(*) as total FROM inscripciones WHERE id_curso = :curso_id AND estado = 'activo'");
+            $stmt_insc->execute([':curso_id' => $curso_id]);
+            $inscripciones = $stmt_insc->fetch(PDO::FETCH_ASSOC);
+            
+            $stmt_act = $conn->pdo->prepare("SELECT COUNT(*) as total FROM actividades WHERE id_curso = :curso_id");
+            $stmt_act->execute([':curso_id' => $curso_id]);
+            $actividades = $stmt_act->fetch(PDO::FETCH_ASSOC);
+            
+            $stmt_prog = $conn->pdo->prepare("SELECT COALESCE(AVG(porcentaje), 0) as promedio FROM progreso WHERE id_curso = :curso_id");
+            $stmt_prog->execute([':curso_id' => $curso_id]);
+            $progreso = $stmt_prog->fetch(PDO::FETCH_ASSOC);
+        }
+    } catch(PDOException $e) {
+        $error_message = "Error al cargar el curso: " . $e->getMessage();
+    }
 }
 
 // Manejar actualización del curso
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['editar_curso'])) {
-    $curso_id = intval($_POST['id_curso']);
-    $nombre = mysqli_real_escape_string($conn, trim($_POST['nombre']));
-    $descripcion = mysqli_real_escape_string($conn, trim($_POST['descripcion']));
-    $nivel = mysqli_real_escape_string($conn, $_POST['nivel']);
-    $duracion_horas = intval($_POST['duracion_horas']);
+    $curso_id = (int)$_POST['id_curso'];
+    $nombre = trim($_POST['nombre'] ?? '');
+    $descripcion = trim($_POST['descripcion'] ?? '');
+    $nivel = $_POST['nivel'] ?? 'Básico';
+    $duracion_horas = (int)$_POST['duracion_horas'] ?? 0;
     
     // Validaciones
     if (empty($nombre) || strlen($nombre) < 3) {
@@ -39,57 +63,71 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['editar_curso'])) {
     } elseif ($duracion_horas < 1 || $duracion_horas > 1000) {
         $error_message = "La duración debe estar entre 1 y 1000 horas.";
     } else {
-        // Verificar nuevamente que el curso pertenezca al tutor
-        $sql_check = "SELECT id FROM cursos WHERE id = '$curso_id' AND id_tutor = '$tutor_id'";
-        $check_result = mysqli_query($conn, $sql_check);
-        
-        if (mysqli_num_rows($check_result) > 0) {
-            $sql_update = "UPDATE cursos SET 
-                          nombre = '$nombre',
-                          descripcion = '$descripcion',
-                          nivel = '$nivel',
-                          duracion_horas = '$duracion_horas'
-                          WHERE id = '$curso_id'";
+        try {
+            // Verificar nuevamente que el curso pertenezca al tutor
+            $stmt_check = $conn->pdo->prepare("SELECT id FROM cursos WHERE id = :curso_id AND id_tutor = :tutor_id");
+            $stmt_check->execute([':curso_id' => $curso_id, ':tutor_id' => $tutor_id]);
             
-            if (mysqli_query($conn, $sql_update)) {
+            if ($stmt_check->rowCount() > 0) {
+                $stmt_update = $conn->pdo->prepare("
+                    UPDATE cursos SET 
+                        nombre = :nombre,
+                        descripcion = :descripcion,
+                        nivel = :nivel,
+                        duracion_horas = :duracion_horas
+                    WHERE id = :curso_id
+                ");
+                
+                $stmt_update->execute([
+                    ':nombre' => $nombre,
+                    ':descripcion' => $descripcion,
+                    ':nivel' => $nivel,
+                    ':duracion_horas' => $duracion_horas,
+                    ':curso_id' => $curso_id
+                ]);
+                
                 $success_message = "🎉 ¡Curso actualizado exitosamente!";
+                
                 // Obtener datos actualizados
-                $curso_data = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM cursos WHERE id = '$curso_id'"));
+                $stmt = $conn->pdo->prepare("SELECT * FROM cursos WHERE id = :curso_id");
+                $stmt->execute([':curso_id' => $curso_id]);
+                $curso_data = $stmt->fetch(PDO::FETCH_ASSOC);
+                
             } else {
-                $error_message = "Error al actualizar: " . mysqli_error($conn);
+                $error_message = "No tienes permiso para editar este curso.";
             }
-        } else {
-            $error_message = "No tienes permiso para editar este curso.";
+        } catch(PDOException $e) {
+            $error_message = "Error al actualizar: " . $e->getMessage();
         }
     }
 }
 
 // Manejar eliminación del curso
 if (isset($_GET['eliminar']) && $curso_id > 0) {
-    // Verificar que no haya inscripciones ni actividades
-    $sql_check_inscripciones = "SELECT COUNT(*) as total FROM inscripciones WHERE id_curso = '$curso_id'";
-    $sql_check_actividades = "SELECT COUNT(*) as total FROM actividades WHERE id_curso = '$curso_id'";
-    
-    $res_inscripciones = mysqli_query($conn, $sql_check_inscripciones);
-    $res_actividades = mysqli_query($conn, $sql_check_actividades);
-    
-    $row_inscripciones = mysqli_fetch_assoc($res_inscripciones);
-    $row_actividades = mysqli_fetch_assoc($res_actividades);
-    
-    if ($row_inscripciones['total'] > 0) {
-        $error_message = "No se puede eliminar: Hay alumnos inscritos en este curso.";
-    } elseif ($row_actividades['total'] > 0) {
-        $error_message = "No se puede eliminar: Hay actividades asociadas a este curso.";
-    } else {
-        $sql_delete = "DELETE FROM cursos WHERE id = '$curso_id' AND id_tutor = '$tutor_id'";
+    try {
+        // Verificar que no haya inscripciones ni actividades
+        $stmt_insc = $conn->pdo->prepare("SELECT COUNT(*) as total FROM inscripciones WHERE id_curso = :curso_id");
+        $stmt_insc->execute([':curso_id' => $curso_id]);
+        $row_inscripciones = $stmt_insc->fetch(PDO::FETCH_ASSOC);
         
-        if (mysqli_query($conn, $sql_delete)) {
+        $stmt_act = $conn->pdo->prepare("SELECT COUNT(*) as total FROM actividades WHERE id_curso = :curso_id");
+        $stmt_act->execute([':curso_id' => $curso_id]);
+        $row_actividades = $stmt_act->fetch(PDO::FETCH_ASSOC);
+        
+        if ($row_inscripciones['total'] > 0) {
+            $error_message = "No se puede eliminar: Hay alumnos inscritos en este curso.";
+        } elseif ($row_actividades['total'] > 0) {
+            $error_message = "No se puede eliminar: Hay actividades asociadas a este curso.";
+        } else {
+            $stmt_delete = $conn->pdo->prepare("DELETE FROM cursos WHERE id = :curso_id AND id_tutor = :tutor_id");
+            $stmt_delete->execute([':curso_id' => $curso_id, ':tutor_id' => $tutor_id]);
+            
             $success_message = "✅ ¡Curso eliminado exitosamente!";
             // Redirigir después de 2 segundos
             echo '<script>setTimeout(function() { window.location.href = "dashboard_tutor.php"; }, 2000);</script>';
-        } else {
-            $error_message = "Error al eliminar el curso: " . mysqli_error($conn);
         }
+    } catch(PDOException $e) {
+        $error_message = "Error al eliminar el curso: " . $e->getMessage();
     }
 }
 ?>

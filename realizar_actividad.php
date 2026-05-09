@@ -8,27 +8,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['tipo'] != 'alumno') {
     exit();
 }
 
-// Crear tabla de respuestas de examen si no existe
-$crear_tabla = "
-CREATE TABLE IF NOT EXISTS `respuestas_examen` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `id_alumno` int(11) NOT NULL,
-  `id_pregunta` int(11) NOT NULL,
-  `id_opcion` int(11) DEFAULT NULL,
-  `respuesta_texto` text DEFAULT NULL,
-  `fecha_respuesta` timestamp NOT NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`id`),
-  KEY `id_alumno` (`id_alumno`),
-  KEY `id_pregunta` (`id_pregunta`),
-  KEY `id_opcion` (`id_opcion`),
-  CONSTRAINT `respuestas_examen_ibfk_1` FOREIGN KEY (`id_alumno`) REFERENCES `usuarios` (`id`) ON DELETE CASCADE,
-  CONSTRAINT `respuestas_examen_ibfk_2` FOREIGN KEY (`id_pregunta`) REFERENCES `preguntas_examen` (`id`) ON DELETE CASCADE,
-  CONSTRAINT `respuestas_examen_ibfk_3` FOREIGN KEY (`id_opcion`) REFERENCES `opciones_pregunta` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-";
-mysqli_query($conn, $crear_tabla);
-
-$alumno_id = $_SESSION['user_id'];
+$alumno_id = (int)$_SESSION['user_id'];
 $nombre_alumno = $_SESSION['nombre'];
 
 // Validar ID de actividad
@@ -36,43 +16,91 @@ if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
     header("Location: mis_actividades.php");
     exit();
 }
-$id_actividad = intval($_GET['id']);
+$id_actividad = (int)$_GET['id'];
 
-// Obtener datos de la actividad
-$query_act = "SELECT a.*, c.nombre as curso_nombre 
-              FROM actividades a 
-              JOIN cursos c ON a.id_curso = c.id 
-              WHERE a.id = $id_actividad";
-$res_act = mysqli_query($conn, $query_act);
-if (mysqli_num_rows($res_act) == 0) {
-    header("Location: mis_actividades.php");
-    exit();
-}
-$actividad = mysqli_fetch_assoc($res_act);
-
-// Verificar inscripción
-$check_insc = "SELECT id FROM inscripciones WHERE id_alumno = $alumno_id AND id_curso = {$actividad['id_curso']} AND estado = 'activo'";
-$res_insc = mysqli_query($conn, $check_insc);
-if (mysqli_num_rows($res_insc) == 0) {
-    header("Location: mis_actividades.php");
-    exit();
-}
-
-// Verificar entrega previa (solo tareas)
-$entrega_existente = null;
-if ($actividad['es_examen'] != 1) {
-    $query_ent = "SELECT id, estado, respuesta, archivo FROM entregas WHERE id_alumno = $alumno_id AND id_actividad = $id_actividad";
-    $res_ent = mysqli_query($conn, $query_ent);
-    if (mysqli_num_rows($res_ent) > 0) {
-        $entrega_existente = mysqli_fetch_assoc($res_ent);
-        if ($entrega_existente['estado'] == 'calificado') {
-            header("Location: ver_entrega.php?id=" . $entrega_existente['id']);
-            exit();
-        }
+try {
+    // Obtener datos de la actividad
+    $stmt = $conn->pdo->prepare("
+        SELECT a.*, c.nombre as curso_nombre 
+        FROM actividades a 
+        JOIN cursos c ON a.id_curso = c.id 
+        WHERE a.id = :id_actividad
+    ");
+    $stmt->execute([':id_actividad' => $id_actividad]);
+    
+    if ($stmt->rowCount() == 0) {
+        header("Location: mis_actividades.php");
+        exit();
     }
+    $actividad = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    // Verificar fecha límite
+    $fecha_limite = new DateTime($actividad['fecha_limite']);
+    $hoy = new DateTime();
+    if ($fecha_limite < $hoy) {
+        header("Location: mis_actividades.php?error=vencida");
+        exit();
+    }
+    
+    // Verificar inscripción en el curso
+    $stmt = $conn->pdo->prepare("
+        SELECT id FROM inscripciones 
+        WHERE id_alumno = :alumno_id AND id_curso = :id_curso AND estado = 'activo'
+    ");
+    $stmt->execute([
+        ':alumno_id' => $alumno_id,
+        ':id_curso' => $actividad['id_curso']
+    ]);
+    
+    if ($stmt->rowCount() == 0) {
+        header("Location: mis_actividades.php");
+        exit();
+    }
+    
+    // Verificar entregas previas
+    $stmt = $conn->pdo->prepare("
+        SELECT id, estado, respuesta, archivo 
+        FROM entregas 
+        WHERE id_alumno = :alumno_id AND id_actividad = :id_actividad
+        ORDER BY fecha_entrega DESC 
+        LIMIT 1
+    ");
+    $stmt->execute([
+        ':alumno_id' => $alumno_id,
+        ':id_actividad' => $id_actividad
+    ]);
+    $entrega_existente = $stmt->rowCount() > 0 ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+    
+    if ($entrega_existente && $entrega_existente['estado'] == 'calificado') {
+        header("Location: ver_entrega.php?id=" . $entrega_existente['id']);
+        exit();
+    }
+    
+    // Verificar intentos permitidos
+    $intentos_permitidos = $actividad['intentos_permitidos'] ?? 1;
+    $stmt = $conn->pdo->prepare("
+        SELECT COUNT(*) as total 
+        FROM entregas 
+        WHERE id_alumno = :alumno_id AND id_actividad = :id_actividad
+    ");
+    $stmt->execute([
+        ':alumno_id' => $alumno_id,
+        ':id_actividad' => $id_actividad
+    ]);
+    $intentos_usados = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+    
+    if ($intentos_usados >= $intentos_permitidos) {
+        header("Location: mis_actividades.php?error=intentos_agotados");
+        exit();
+    }
+    
+} catch(PDOException $e) {
+    error_log("Error en realizar_actividad.php: " . $e->getMessage());
+    header("Location: mis_actividades.php");
+    exit();
 }
 
-// Avatar del alumno
+// Avatares
 $avatares = [
     'panda' => ['emoji' => '🐼', 'color' => '#3A506B', 'nivel' => 1],
     'dragon' => ['emoji' => '🐉', 'color' => '#FF6B6B', 'nivel' => 1],
@@ -83,97 +111,145 @@ $avatares = [
     'superheroe' => ['emoji' => '🦸‍♂️', 'color' => '#FF6B8B', 'nivel' => 5],
     'mago' => ['emoji' => '🧙‍♂️', 'color' => '#00C2A8', 'nivel' => 6]
 ];
-$avatar_key = 'panda';
-$check_avatar_col = mysqli_query($conn, "SHOW COLUMNS FROM usuarios LIKE 'avatar'");
-if (mysqli_num_rows($check_avatar_col) > 0) {
-    $query_avatar = "SELECT avatar FROM usuarios WHERE id = $alumno_id";
-    $res_avatar = mysqli_query($conn, $query_avatar);
-    if ($res_avatar && mysqli_num_rows($res_avatar) > 0) {
-        $avatar_data = mysqli_fetch_assoc($res_avatar);
-        $avatar_key = $avatar_data['avatar'] ?: 'panda';
-    }
+
+try {
+    $stmt = $conn->pdo->prepare("SELECT COALESCE(avatar, 'panda') as avatar FROM usuarios WHERE id = :alumno_id");
+    $stmt->execute([':alumno_id' => $alumno_id]);
+    $avatar_data = $stmt->fetch(PDO::FETCH_ASSOC);
+    $avatar_key = $avatar_data['avatar'] ?? 'panda';
+} catch(PDOException $e) {
+    $avatar_key = 'panda';
 }
+
 $avatar_emoji = $avatares[$avatar_key]['emoji'];
 $avatar_color = $avatares[$avatar_key]['color'];
 
-// Determinar si es examen
 $es_examen = ($actividad['es_examen'] == 1 || $actividad['tipo'] == 'Examen');
 $preguntas = [];
+
 if ($es_examen) {
-    $query_preg = "SELECT * FROM preguntas_examen WHERE id_actividad = $id_actividad ORDER BY id";
-    $res_preg = mysqli_query($conn, $query_preg);
-    while ($preg = mysqli_fetch_assoc($res_preg)) {
-        $id_preg = $preg['id'];
-        // Obtener opciones para opción múltiple o verdadero/falso
-        if (in_array($preg['tipo_pregunta'], ['opcion_multiple', 'verdadero_falso'])) {
-            $query_opc = "SELECT * FROM opciones_pregunta WHERE id_pregunta = $id_preg";
-            $res_opc = mysqli_query($conn, $query_opc);
-            $preg['opciones'] = [];
-            while ($opc = mysqli_fetch_assoc($res_opc)) {
-                $preg['opciones'][] = $opc;
+    try {
+        $stmt = $conn->pdo->prepare("SELECT * FROM preguntas_examen WHERE id_actividad = :id_actividad ORDER BY id");
+        $stmt->execute([':id_actividad' => $id_actividad]);
+        $preguntas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        foreach ($preguntas as &$preg) {
+            if (in_array($preg['tipo_pregunta'], ['opcion_multiple', 'verdadero_falso'])) {
+                $stmt_opc = $conn->pdo->prepare("SELECT * FROM opciones_pregunta WHERE id_pregunta = :id_pregunta");
+                $stmt_opc->execute([':id_pregunta' => $preg['id']]);
+                $preg['opciones'] = $stmt_opc->fetchAll(PDO::FETCH_ASSOC);
+            } else {
+                $preg['opciones'] = [];
             }
-        } else {
-            $preg['opciones'] = [];
         }
-        $preguntas[] = $preg;
-    }
-    if (empty($preguntas)) {
-        header("Location: mis_actividades.php?error=sin_preguntas");
+        
+        if (empty($preguntas)) {
+            header("Location: mis_actividades.php?error=sin_preguntas");
+            exit();
+        }
+    } catch(PDOException $e) {
+        header("Location: mis_actividades.php?error=no_preguntas");
         exit();
     }
 }
 
 // Procesar envío de tarea normal
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['accion'] === 'entregar_tarea') {
-    $respuesta = mysqli_real_escape_string($conn, $_POST['respuesta'] ?? '');
+    $respuesta = trim($_POST['respuesta'] ?? '');
     $archivo = '';
+    
     if (isset($_FILES['archivo']) && $_FILES['archivo']['error'] == 0) {
-        $nombre_archivo = time() . '_' . basename($_FILES['archivo']['name']);
-        $ruta_destino = 'uploads/entregas/' . $nombre_archivo;
-        if (move_uploaded_file($_FILES['archivo']['tmp_name'], $ruta_destino)) {
-            $archivo = $ruta_destino;
+        $extensiones_permitidas = ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'doc', 'docx', 'txt', 'zip'];
+        $archivo_extension = strtolower(pathinfo($_FILES['archivo']['name'], PATHINFO_EXTENSION));
+        
+        if (in_array($archivo_extension, $extensiones_permitidas) && $_FILES['archivo']['size'] <= 10 * 1024 * 1024) {
+            $nombre_archivo = time() . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '', $_FILES['archivo']['name']);
+            $ruta_destino = 'uploads/entregas/' . $nombre_archivo;
+            if (move_uploaded_file($_FILES['archivo']['tmp_name'], $ruta_destino)) {
+                $archivo = $ruta_destino;
+            }
         }
     }
-    if ($entrega_existente) {
-        $id_entrega = $entrega_existente['id'];
-        $update = "UPDATE entregas SET respuesta = '$respuesta', archivo = '$archivo', fecha_entrega = NOW() WHERE id = $id_entrega";
-        mysqli_query($conn, $update);
-    } else {
-        $insert = "INSERT INTO entregas (id_alumno, id_actividad, respuesta, archivo, fecha_entrega, estado) 
-                   VALUES ($alumno_id, $id_actividad, '$respuesta', '$archivo', NOW(), 'pendiente')";
-        mysqli_query($conn, $insert);
+    
+    try {
+        if ($entrega_existente) {
+            $stmt = $conn->pdo->prepare("
+                UPDATE entregas SET respuesta = :respuesta, archivo = :archivo, fecha_entrega = CURRENT_TIMESTAMP 
+                WHERE id = :id_entrega
+            ");
+            $stmt->execute([
+                ':respuesta' => $respuesta,
+                ':archivo' => $archivo,
+                ':id_entrega' => $entrega_existente['id']
+            ]);
+        } else {
+            $stmt = $conn->pdo->prepare("
+                INSERT INTO entregas (id_alumno, id_actividad, respuesta, archivo, fecha_entrega, estado) 
+                VALUES (:alumno_id, :id_actividad, :respuesta, :archivo, CURRENT_TIMESTAMP, 'pendiente')
+            ");
+            $stmt->execute([
+                ':alumno_id' => $alumno_id,
+                ':id_actividad' => $id_actividad,
+                ':respuesta' => $respuesta,
+                ':archivo' => $archivo
+            ]);
+        }
+        header("Location: mis_actividades.php?msg=entregado");
+        exit();
+    } catch(PDOException $e) {
+        $error_msg = "Error al guardar la entrega: " . $e->getMessage();
     }
-    header("Location: mis_actividades.php?msg=entregado");
-    exit();
 }
 
 // Procesar envío de examen (AJAX)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['accion'] === 'entregar_examen') {
-    $respuestas = json_decode($_POST['respuestas'], true);
-    mysqli_begin_transaction($conn);
+    header('Content-Type: application/json');
+    $respuestas = json_decode($_POST['respuestas'] ?? '[]', true);
+    
     try {
-        $insert_entrega = "INSERT INTO entregas (id_alumno, id_actividad, fecha_entrega, estado) 
-                           VALUES ($alumno_id, $id_actividad, NOW(), 'pendiente')";
-        mysqli_query($conn, $insert_entrega);
-        $id_entrega = mysqli_insert_id($conn);
-
+        $conn->pdo->beginTransaction();
+        
+        $stmt = $conn->pdo->prepare("
+            INSERT INTO entregas (id_alumno, id_actividad, fecha_entrega, estado) 
+            VALUES (:alumno_id, :id_actividad, CURRENT_TIMESTAMP, 'pendiente')
+        ");
+        $stmt->execute([
+            ':alumno_id' => $alumno_id,
+            ':id_actividad' => $id_actividad
+        ]);
+        $id_entrega = $conn->pdo->lastInsertId();
+        
+        $stmt_resp = $conn->pdo->prepare("
+            INSERT INTO respuestas_examen (id_alumno, id_pregunta, id_opcion, respuesta_texto, id_entrega) 
+            VALUES (:alumno_id, :id_pregunta, :id_opcion, :respuesta_texto, :id_entrega)
+        ");
+        
         foreach ($respuestas as $id_pregunta => $respuesta) {
             $id_opcion = null;
             $respuesta_texto = null;
+            
             if (is_array($respuesta) && isset($respuesta['id_opcion'])) {
-                $id_opcion = intval($respuesta['id_opcion']);
+                $id_opcion = (int)$respuesta['id_opcion'];
             } else {
-                $respuesta_texto = mysqli_real_escape_string($conn, $respuesta);
+                $respuesta_texto = trim($respuesta);
             }
-            $insert_resp = "INSERT INTO respuestas_examen (id_alumno, id_pregunta, id_opcion, respuesta_texto) 
-                            VALUES ($alumno_id, $id_pregunta, " . ($id_opcion ? $id_opcion : "NULL") . ", " . ($respuesta_texto ? "'$respuesta_texto'" : "NULL") . ")";
-            mysqli_query($conn, $insert_resp);
+            
+            $stmt_resp->execute([
+                ':alumno_id' => $alumno_id,
+                ':id_pregunta' => (int)$id_pregunta,
+                ':id_opcion' => $id_opcion,
+                ':respuesta_texto' => $respuesta_texto,
+                ':id_entrega' => $id_entrega
+            ]);
         }
-
-        mysqli_commit($conn);
+        
+        $conn->pdo->commit();
         echo json_encode(['success' => true, 'message' => 'Examen entregado correctamente']);
-    } catch (Exception $e) {
-        mysqli_rollback($conn);
+        
+    } catch(Exception $e) {
+        if ($conn->pdo->inTransaction()) {
+            $conn->pdo->rollBack();
+        }
         echo json_encode(['success' => false, 'message' => 'Error: ' . $e->getMessage()]);
     }
     exit();
