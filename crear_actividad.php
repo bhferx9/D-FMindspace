@@ -1089,12 +1089,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                         </label>
                         <select name="id_curso" class="form-select" required>
                             <option value="">Selecciona un curso</option>
-                            <?php 
-                            mysqli_data_seek($res_cursos, 0);
-                            while($c = mysqli_fetch_assoc($res_cursos)): 
-                            ?>
+                            <?php foreach($cursos as $c): ?>
                                 <option value="<?php echo $c['id']; ?>"><?php echo htmlspecialchars($c['nombre']); ?></option>
-                            <?php endwhile; ?>
+                            <?php endforeach; ?>
                         </select>
                     </div>
                     
@@ -1200,12 +1197,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                         </label>
                         <select name="id_curso" class="form-select" required>
                             <option value="">Selecciona un curso</option>
-                            <?php 
-                            mysqli_data_seek($res_cursos, 0);
-                            while($c = mysqli_fetch_assoc($res_cursos)): 
-                            ?>
+                            <?php foreach($cursos as $c): ?>
                                 <option value="<?php echo $c['id']; ?>"><?php echo htmlspecialchars($c['nombre']); ?></option>
-                            <?php endwhile; ?>
+                            <?php endforeach; ?>
                         </select>
                     </div>
                     

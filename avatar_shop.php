@@ -75,32 +75,95 @@ $query_tiempo_total = "SELECT COUNT(*) as total
 $res_tiempo = mysqli_query($conn, $query_tiempo_total);
 $tiempo_actividades = mysqli_fetch_assoc($res_tiempo)['total'] ?? 0;
 
-// Avatares disponibles con requisitos para desbloquear
+// =============================================
+// SISTEMA DE AVATARES - Panda siempre disponible
+// =============================================
 $avatares = [
-    'panda' => [
+    'panda' => [  // <--- PANDA siempre disponible, sin requisitos
         'emoji' => '🐼',
         'color' => '#3A506B',
         'nivel' => 1,
         'nombre' => 'Panda Explorador',
-        'descripcion' => 'Tu primer compañero de aventuras',
-        'requisito' => 'Completar 1 actividad',
+        'descripcion' => 'Tu compañero fiel siempre disponible para ti',
+        'requisito' => 'Siempre disponible',
         'requisito_valor' => 1,
         'tipo_requisito' => 'actividades',
-        'desbloqueado' => $act_completadas >= 1,
+        'desbloqueado' => true,  // SIEMPRE desbloqueado
         'precio' => 0,
         'categoria' => 'inicial'
     ],
+    'zorro' => [
+        'emoji' => '🦊',
+        'color' => '#E67E22',
+        'nivel' => 1,
+        'nombre' => 'Zorro Ágil',
+        'descripcion' => 'Astuto y rápido como el conocimiento que adquieres',
+        'requisito' => 'Completar 2 actividades',
+        'requisito_valor' => 2,
+        'tipo_requisito' => 'actividades',
+        'desbloqueado' => $act_completadas >= 2,
+        'categoria' => 'inicial'
+    ],
+    'conejo' => [
+        'emoji' => '🐰',
+        'color' => '#F4A460',
+        'nivel' => 1,
+        'nombre' => 'Conejo Saltarín',
+        'descripcion' => 'Salta de conocimiento en conocimiento',
+        'requisito' => 'Completar 3 actividades',
+        'requisito_valor' => 3,
+        'tipo_requisito' => 'actividades',
+        'desbloqueado' => $act_completadas >= 3,
+        'categoria' => 'inicial'
+    ],
+    'gato' => [
+        'emoji' => '🐱',
+        'color' => '#FFA07A',
+        'nivel' => 1,
+        'nombre' => 'Gato Curioso',
+        'descripcion' => 'La curiosidad no mató a este gato, lo hizo más sabio',
+        'requisito' => '1 calificación perfecta (10/10)',
+        'requisito_valor' => 1,
+        'tipo_requisito' => 'perfectas',
+        'desbloqueado' => $calificaciones_perfectas >= 1,
+        'categoria' => 'inicial'
+    ],
+    'perro' => [
+        'emoji' => '🐶',
+        'color' => '#DEB887',
+        'nivel' => 1,
+        'nombre' => 'Perro Fiel',
+        'descripcion' => 'Siempre leal al aprendizaje',
+        'requisito' => '1 calificación alta (8+)',
+        'requisito_valor' => 1,
+        'tipo_requisito' => 'calificaciones_altas',
+        'desbloqueado' => $calificaciones_altas >= 1,
+        'categoria' => 'inicial'
+    ],
+    'raton' => [
+        'emoji' => '🐭',
+        'color' => '#B0C4DE',
+        'nivel' => 1,
+        'nombre' => 'Ratón Estudioso',
+        'descripcion' => 'Pequeño pero muy aplicado',
+        'requisito' => 'Completar 4 actividades',
+        'requisito_valor' => 4,
+        'tipo_requisito' => 'actividades',
+        'desbloqueado' => $act_completadas >= 4,
+        'categoria' => 'inicial'
+    ],
+    
+    // ==================== ESPECIALES (Media-baja - 5 a 10 actividades) ====================
     'dragon' => [
         'emoji' => '🐉',
         'color' => '#FF6B6B',
-        'nivel' => 1,
+        'nivel' => 2,
         'nombre' => 'Dragón Sabio',
         'descripcion' => 'Domina el arte del aprendizaje',
         'requisito' => '2 calificaciones perfectas (10/10)',
         'requisito_valor' => 2,
         'tipo_requisito' => 'perfectas',
         'desbloqueado' => $calificaciones_perfectas >= 2,
-        'precio' => 0,
         'categoria' => 'especial'
     ],
     'leon' => [
@@ -113,22 +176,70 @@ $avatares = [
         'requisito_valor' => 5,
         'tipo_requisito' => 'actividades',
         'desbloqueado' => $act_completadas >= 5,
-        'precio' => 0,
         'categoria' => 'especial'
     ],
     'dino' => [
         'emoji' => '🦖',
         'color' => '#6BCF7F',
-        'nivel' => 1,
+        'nivel' => 2,
         'nombre' => 'Dino Curioso',
         'descripcion' => 'Siempre buscando nuevos conocimientos',
         'requisito' => 'Completar 1 curso al 100%',
         'requisito_valor' => 1,
         'tipo_requisito' => 'cursos_completados',
         'desbloqueado' => $cursos_completados >= 1,
-        'precio' => 0,
         'categoria' => 'especial'
     ],
+    'pinguino' => [
+        'emoji' => '🐧',
+        'color' => '#1C2833',
+        'nivel' => 2,
+        'nombre' => 'Pingüino Aventurero',
+        'descripcion' => 'Un explorador polar que ama las altas calificaciones',
+        'requisito' => '3 calificaciones altas (8+)',
+        'requisito_valor' => 3,
+        'tipo_requisito' => 'calificaciones_altas',
+        'desbloqueado' => $calificaciones_altas >= 3,
+        'categoria' => 'especial'
+    ],
+    'bufalo' => [
+        'emoji' => '🦬',
+        'color' => '#8B4513',
+        'nivel' => 2,
+        'nombre' => 'Búfalo Persistente',
+        'descripcion' => 'Nada lo detiene en su búsqueda del saber',
+        'requisito' => 'Completar 8 actividades',
+        'requisito_valor' => 8,
+        'tipo_requisito' => 'actividades',
+        'desbloqueado' => $act_completadas >= 8,
+        'categoria' => 'especial'
+    ],
+    'pulpo' => [
+        'emoji' => '🐙',
+        'color' => '#CD5C5C',
+        'nivel' => 2,
+        'nombre' => 'Pulpo Multitarea',
+        'descripcion' => 'Puede con muchas actividades a la vez',
+        'requisito' => 'Tener entregas en 3 actividades diferentes',
+        'requisito_valor' => 3,
+        'tipo_requisito' => 'actividades_diferentes',
+        'desbloqueado' => $act_completadas >= 3,
+        'categoria' => 'especial'
+    ],
+    'abeja' => [
+        'emoji' => '🐝',
+        'color' => '#FFD700',
+        'nivel' => 2,
+        'nombre' => 'Abeja Trabajadora',
+        'descripcion' => 'Trabaja sin descanso en cada actividad',
+        'requisito' => 'Completar 6 actividades',
+        'requisito_valor' => 6,
+        'tipo_requisito' => 'actividades',
+        'desbloqueado' => $act_completadas >= 6,
+        'categoria' => 'especial'
+    ],
+    
+    // ==================== RAROS (Media-alta - 10 a 20 actividades) ====================
     'robot' => [
         'emoji' => '🤖',
         'color' => '#4D96FF',
@@ -139,60 +250,19 @@ $avatares = [
         'requisito_valor' => 3,
         'tipo_requisito' => 'perfectas',
         'desbloqueado' => $calificaciones_perfectas >= 3,
-        'precio' => 0,
         'categoria' => 'raro'
     ],
     'astronauta' => [
         'emoji' => '👨‍🚀',
         'color' => '#845EC2',
-        'nivel' => 4,
+        'nivel' => 3,
         'nombre' => 'Astronauta Estelar',
         'descripcion' => 'Explora los límites del conocimiento',
         'requisito' => 'Completar 10 actividades',
         'requisito_valor' => 10,
         'tipo_requisito' => 'actividades',
         'desbloqueado' => $act_completadas >= 10,
-        'precio' => 0,
         'categoria' => 'raro'
-    ],
-    'superheroe' => [
-        'emoji' => '🦸‍♂️',
-        'color' => '#FF6B8B',
-        'nivel' => 5,
-        'nombre' => 'Superhéroe del Saber',
-        'descripcion' => 'Salva el día con tu conocimiento',
-        'requisito' => '5 calificaciones altas (8+)',
-        'requisito_valor' => 5,
-        'tipo_requisito' => 'calificaciones_altas',
-        'desbloqueado' => $calificaciones_altas >= 5,
-        'precio' => 0,
-        'categoria' => 'épico'
-    ],
-    'mago' => [
-        'emoji' => '🧙‍♂️',
-        'color' => '#00C2A8',
-        'nivel' => 6,
-        'nombre' => 'Mago del Conocimiento',
-        'descripcion' => 'Domina la magia del aprendizaje continuo',
-        'requisito' => 'Completar 15 actividades',
-        'requisito_valor' => 15,
-        'tipo_requisito' => 'actividades',
-        'desbloqueado' => $act_completadas >= 15,
-        'precio' => 0,
-        'categoria' => 'legendario'
-    ],
-    'fenix' => [
-        'emoji' => '🦅',
-        'color' => '#FF9A76',
-        'nivel' => 7,
-        'nombre' => 'Fénix Renacido',
-        'descripcion' => 'Renace más fuerte con cada desafío superado',
-        'requisito' => '3 cursos completados al 100%',
-        'requisito_valor' => 3,
-        'tipo_requisito' => 'cursos_completados',
-        'desbloqueado' => $cursos_completados >= 3,
-        'precio' => 0,
-        'categoria' => 'legendario'
     ],
     'ninja' => [
         'emoji' => '🥷',
@@ -200,38 +270,245 @@ $avatares = [
         'nivel' => 3,
         'nombre' => 'Ninja del Aprendizaje',
         'descripcion' => 'Silencioso pero mortalmente eficiente',
-        'requisito' => '7 actividades completadas',
+        'requisito' => 'Completar 7 actividades',
         'requisito_valor' => 7,
         'tipo_requisito' => 'actividades',
         'desbloqueado' => $act_completadas >= 7,
-        'precio' => 0,
-        'categoria' => 'especial'
+        'categoria' => 'raro'
     ],
+    'ballena' => [
+        'emoji' => '🐋',
+        'color' => '#4169E1',
+        'nivel' => 3,
+        'nombre' => 'Ballena Sabia',
+        'descripcion' => 'Almacena grandes cantidades de conocimiento',
+        'requisito' => 'Completar 2 cursos al 100%',
+        'requisito_valor' => 2,
+        'tipo_requisito' => 'cursos_completados',
+        'desbloqueado' => $cursos_completados >= 2,
+        'categoria' => 'raro'
+    ],
+    'aguila' => [
+        'emoji' => '🦅',
+        'color' => '#DAA520',
+        'nivel' => 3,
+        'nombre' => 'Águila Visionaria',
+        'descripcion' => 'Ve más allá de lo común',
+        'requisito' => '5 calificaciones altas (8+)',
+        'requisito_valor' => 5,
+        'tipo_requisito' => 'calificaciones_altas',
+        'desbloqueado' => $calificaciones_altas >= 5,
+        'categoria' => 'raro'
+    ],
+    'lobo' => [
+        'emoji' => '🐺',
+        'color' => '#708090',
+        'nivel' => 3,
+        'nombre' => 'Lobo en Manada',
+        'descripcion' => 'El trabajo en equipo es su fortaleza',
+        'requisito' => '4 calificaciones perfectas (10/10)',
+        'requisito_valor' => 4,
+        'tipo_requisito' => 'perfectas',
+        'desbloqueado' => $calificaciones_perfectas >= 4,
+        'categoria' => 'raro'
+    ],
+    
+    // ==================== ÉPICOS (Difíciles - 15 a 30 actividades) ====================
+    'superheroe' => [
+        'emoji' => '🦸‍♂️',
+        'color' => '#FF6B8B',
+        'nivel' => 4,
+        'nombre' => 'Superhéroe del Saber',
+        'descripcion' => 'Salva el día con tu conocimiento',
+        'requisito' => '8 calificaciones altas (8+)',
+        'requisito_valor' => 8,
+        'tipo_requisito' => 'calificaciones_altas',
+        'desbloqueado' => $calificaciones_altas >= 8,
+        'categoria' => 'épico'
+    ],
+    'robot_avanzado' => [
+        'emoji' => '🤖',
+        'color' => '#2E86AB',
+        'nivel' => 4,
+        'nombre' => 'Robot Avanzado',
+        'descripcion' => 'Inteligencia artificial en su máximo esplendor',
+        'requisito' => '6 calificaciones perfectas (10/10)',
+        'requisito_valor' => 6,
+        'tipo_requisito' => 'perfectas',
+        'desbloqueado' => $calificaciones_perfectas >= 6,
+        'categoria' => 'épico'
+    ],
+    'fénix' => [
+        'emoji' => '🔥',
+        'color' => '#E74C3C',
+        'nivel' => 4,
+        'nombre' => 'Fénix Renacido',
+        'descripcion' => 'Renace más fuerte con cada desafío superado',
+        'requisito' => 'Completar 15 actividades',
+        'requisito_valor' => 15,
+        'tipo_requisito' => 'actividades',
+        'desbloqueado' => $act_completadas >= 15,
+        'categoria' => 'épico'
+    ],
+    'titan' => [
+        'emoji' => '🏛️',
+        'color' => '#8B0000',
+        'nivel' => 4,
+        'nombre' => 'Titan del Conocimiento',
+        'descripcion' => 'Una fuerza imparable del saber',
+        'requisito' => 'Completar 12 actividades con calificación 9+',
+        'requisito_valor' => 12,
+        'tipo_requisito' => 'actividades',
+        'desbloqueado' => $act_completadas >= 12,
+        'categoria' => 'épico'
+    ],
+    'centauro' => [
+        'emoji' => '🏹',
+        'color' => '#CD853F',
+        'nivel' => 4,
+        'nombre' => 'Centauro Arquero',
+        'descripcion' => 'Siempre da en el blanco del conocimiento',
+        'requisito' => '10 calificaciones altas (8+)',
+        'requisito_valor' => 10,
+        'tipo_requisito' => 'calificaciones_altas',
+        'desbloqueado' => $calificaciones_altas >= 10,
+        'categoria' => 'épico'
+    ],
+    
+    // ==================== LEGENDARIOS (Muy difíciles - 20 a 40 actividades) ====================
+    'mago' => [
+        'emoji' => '🧙‍♂️',
+        'color' => '#00C2A8',
+        'nivel' => 5,
+        'nombre' => 'Mago del Conocimiento',
+        'descripcion' => 'Domina la magia del aprendizaje continuo',
+        'requisito' => 'Completar 20 actividades',
+        'requisito_valor' => 20,
+        'tipo_requisito' => 'actividades',
+        'desbloqueado' => $act_completadas >= 20,
+        'categoria' => 'legendario'
+    ],
+    'fenix_legendario' => [
+        'emoji' => '🦅',
+        'color' => '#FF4500',
+        'nivel' => 5,
+        'nombre' => 'Fénix Legendario',
+        'descripcion' => 'El ave que renace de sus propias cenizas',
+        'requisito' => 'Completar 3 cursos al 100%',
+        'requisito_valor' => 3,
+        'tipo_requisito' => 'cursos_completados',
+        'desbloqueado' => $cursos_completados >= 3,
+        'categoria' => 'legendario'
+    ],
+    'ciborg' => [
+        'emoji' => '🦾',
+        'color' => '#4682B4',
+        'nivel' => 5,
+        'nombre' => 'Ciborg Supremo',
+        'descripcion' => 'Mitad humano, mitad máquina del saber',
+        'requisito' => '8 calificaciones perfectas (10/10)',
+        'requisito_valor' => 8,
+        'tipo_requisito' => 'perfectas',
+        'desbloqueado' => $calificaciones_perfectas >= 8,
+        'categoria' => 'legendario'
+    ],
+    'kraken' => [
+        'emoji' => '🐙',
+        'color' => '#2F4F4F',
+        'nivel' => 5,
+        'nombre' => 'Kraken Abisal',
+        'descripcion' => 'Domina las profundidades del conocimiento',
+        'requisito' => 'Completar 25 actividades',
+        'requisito_valor' => 25,
+        'tipo_requisito' => 'actividades',
+        'desbloqueado' => $act_completadas >= 25,
+        'categoria' => 'legendario'
+    ],
+    'valquiria' => [
+        'emoji' => '⚔️',
+        'color' => '#C0C0C0',
+        'nivel' => 5,
+        'nombre' => 'Valquiria Guerrera',
+        'descripcion' => 'El conocimiento es su arma más poderosa',
+        'requisito' => '15 calificaciones altas (8+)',
+        'requisito_valor' => 15,
+        'tipo_requisito' => 'calificaciones_altas',
+        'desbloqueado' => $calificaciones_altas >= 15,
+        'categoria' => 'legendario'
+    ],
+    
+    // ==================== MÍTICOS (Extremadamente difíciles - 40+ actividades) ====================
     'unicornio' => [
         'emoji' => '🦄',
         'color' => '#D65DB1',
-        'nivel' => 8,
+        'nivel' => 6,
         'nombre' => 'Unicornio Mágico',
         'descripcion' => 'Hace realidad los sueños de aprendizaje',
         'requisito' => '10 calificaciones perfectas (10/10)',
         'requisito_valor' => 10,
         'tipo_requisito' => 'perfectas',
         'desbloqueado' => $calificaciones_perfectas >= 10,
-        'precio' => 0,
         'categoria' => 'mitico'
     ],
-    'robot_avanzado' => [
-        'emoji' => '🤖',
-        'color' => '#2E86AB',
-        'nivel' => 5,
-        'nombre' => 'Robot Avanzado',
-        'descripcion' => 'Inteligencia artificial en su máximo esplendor',
-        'requisito' => '8 calificaciones altas (8+)',
-        'requisito_valor' => 8,
-        'tipo_requisito' => 'calificaciones_altas',
-        'desbloqueado' => $calificaciones_altas >= 8,
-        'precio' => 0,
-        'categoria' => 'épico'
+    'dios_ra' => [
+        'emoji' => '☀️',
+        'color' => '#FFD700',
+        'nivel' => 6,
+        'nombre' => 'Dios Ra',
+        'descripcion' => 'El dios del sol ilumina tu camino al saber',
+        'requisito' => 'Completar 35 actividades',
+        'requisito_valor' => 35,
+        'tipo_requisito' => 'actividades',
+        'desbloqueado' => $act_completadas >= 35,
+        'categoria' => 'mitico'
+    ],
+    'leviathan' => [
+        'emoji' => '🐉',
+        'color' => '#1a237e',
+        'nivel' => 6,
+        'nombre' => 'Leviathan Ancestral',
+        'descripcion' => 'La bestia primordial del conocimiento',
+        'requisito' => 'Completar 5 cursos al 100%',
+        'requisito_valor' => 5,
+        'tipo_requisito' => 'cursos_completados',
+        'desbloqueado' => $cursos_completados >= 5,
+        'categoria' => 'mitico'
+    ],
+    'thor' => [
+        'emoji' => '🔨',
+        'color' => '#5DADE2',
+        'nivel' => 6,
+        'nombre' => 'Thor Martillador',
+        'descripcion' => 'El trueno del conocimiento retumba en tus logros',
+        'requisito' => '12 calificaciones perfectas (10/10)',
+        'requisito_valor' => 12,
+        'tipo_requisito' => 'perfectas',
+        'desbloqueado' => $calificaciones_perfectas >= 12,
+        'categoria' => 'mitico'
+    ],
+    'cerbero' => [
+        'emoji' => '🐕‍🦺',
+        'color' => '#8B4513',
+        'nivel' => 6,
+        'nombre' => 'Cerbero Guardián',
+        'descripcion' => 'Las tres cabezas representan pasado, presente y futuro del saber',
+        'requisito' => 'Completar 40 actividades',
+        'requisito_valor' => 40,
+        'tipo_requisito' => 'actividades',
+        'desbloqueado' => $act_completadas >= 40,
+        'categoria' => 'mitico'
+    ],
+    'zeus' => [
+        'emoji' => '⚡',
+        'color' => '#FFD700',
+        'nivel' => 7,
+        'nombre' => 'Zeus Olímpico',
+        'descripcion' => 'El rey de los dioses del conocimiento',
+        'requisito' => '20 calificaciones perfectas (10/10) y 50 actividades',
+        'requisito_valor' => 20,
+        'tipo_requisito' => 'perfectas',
+        'desbloqueado' => $calificaciones_perfectas >= 20 && $act_completadas >= 50,
+        'categoria' => 'mitico'
     ]
 ];
 
@@ -1089,6 +1366,220 @@ $avatar_actual_info = $avatares[$avatar_actual] ?? $avatares['panda'];
             background: var(--primary);
             color: white;
         }
+
+        /* Panel de tips mejorado */
+.tips-panel {
+    background: linear-gradient(135deg, #ffffff, #fef9f0);
+    border-radius: 30px;
+    padding: 30px;
+    margin-top: 20px;
+    margin-bottom: 30px;
+    box-shadow: var(--card-shadow);
+    border: 2px solid rgba(44, 186, 236, 0.2);
+}
+
+.tips-header {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.tips-icon {
+    width: 70px;
+    height: 70px;
+    background: linear-gradient(135deg, var(--primary), var(--secondary));
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 15px;
+    font-size: 2rem;
+    color: white;
+    box-shadow: 0 8px 20px rgba(44, 186, 236, 0.3);
+}
+
+.tips-title {
+    font-family: 'Fredoka One', cursive;
+    font-size: 1.8rem;
+    background: linear-gradient(90deg, var(--primary), var(--accent));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+}
+
+.tips-subtitle {
+    color: #666;
+    font-size: 1rem;
+}
+
+.tips-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+    margin-bottom: 30px;
+}
+
+.tip-card {
+    background: white;
+    border-radius: 20px;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    transition: all 0.3s ease;
+    border-left: 5px solid;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+.tip-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 12px 25px rgba(0,0,0,0.1);
+}
+
+.tip-actividades { border-left-color: var(--bronze); }
+.tip-perfectas { border-left-color: var(--gold); }
+.tip-cursos { border-left-color: var(--primary); }
+.tip-altas { border-left-color: var(--epic); }
+
+.tip-icon {
+    width: 55px;
+    height: 55px;
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.6rem;
+    flex-shrink: 0;
+}
+
+.tip-actividades .tip-icon { background: rgba(205, 127, 50, 0.15); color: var(--bronze); }
+.tip-perfectas .tip-icon { background: rgba(255, 215, 0, 0.15); color: var(--gold); }
+.tip-cursos .tip-icon { background: rgba(44, 186, 236, 0.15); color: var(--primary); }
+.tip-altas .tip-icon { background: rgba(156, 136, 255, 0.15); color: var(--epic); }
+
+.tip-content {
+    flex: 1;
+}
+
+.tip-name {
+    font-family: 'Fredoka One', cursive;
+    font-size: 1.2rem;
+    margin-bottom: 8px;
+    color: #333;
+}
+
+.tip-desc {
+    font-size: 0.85rem;
+    color: #666;
+    margin-bottom: 12px;
+    line-height: 1.4;
+}
+
+.tip-progress {
+    margin-top: 10px;
+}
+
+.tip-label {
+    font-size: 0.7rem;
+    color: #999;
+    display: block;
+    margin-bottom: 4px;
+}
+
+.tip-progress-bar {
+    height: 6px;
+    background: #e0e0e0;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 4px;
+}
+
+.tip-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--primary));
+    border-radius: 3px;
+    transition: width 0.5s ease;
+}
+
+.tip-value {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--primary);
+}
+
+.tip-badge {
+    text-align: center;
+    min-width: 80px;
+    padding: 8px;
+    background: linear-gradient(135deg, #f8f9fa, #f0f0f0);
+    border-radius: 15px;
+}
+
+.tip-badge i {
+    font-size: 1.2rem;
+    color: var(--secondary);
+    display: block;
+    margin-bottom: 5px;
+}
+
+.tip-badge span {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #555;
+}
+
+.tips-footer {
+    background: linear-gradient(135deg, rgba(44, 186, 236, 0.05), rgba(240, 174, 42, 0.05));
+    border-radius: 20px;
+    padding: 20px;
+    text-align: center;
+}
+
+.legend-title {
+    font-family: 'Fredoka One', cursive;
+    font-size: 1.1rem;
+    color: var(--primary);
+    margin-bottom: 15px;
+}
+
+.legend-items {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 20px;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #555;
+}
+
+.legend-color {
+    width: 20px;
+    height: 20px;
+    border-radius: 8px;
+}
+
+@media (max-width: 768px) {
+    .tip-card {
+        flex-direction: column;
+        text-align: center;
+    }
+    
+    .tip-icon {
+        margin: 0 auto;
+    }
+    
+    .tip-badge {
+        margin-top: 10px;
+    }
+    
+    .legend-items {
+        gap: 12px;
+    }
+}
     </style>
 </head>
 <body>
@@ -1304,7 +1795,7 @@ $avatar_actual_info = $avatares[$avatar_actual] ?? $avatares['panda'];
             <button class="filter-btn" data-category="raro">
                 <i class="fas fa-gem me-2"></i>Raro
             </button>
-            <button class="filter-btn" data-category="epico">
+            <button class="filter-btn" data-category="épico">
                 <i class="fas fa-crown me-2"></i>Épico
             </button>
             <button class="filter-btn" data-category="legendario">
@@ -1327,22 +1818,43 @@ $avatar_actual_info = $avatares[$avatar_actual] ?? $avatares['panda'];
                 $card_class = $avatar['desbloqueado'] ? 'desbloqueado' : 'bloqueado';
                 $categoria_class = 'categoria-' . $avatar['categoria'];
                 
-                // Calcular progreso del requisito
-                $progreso_requisito = 0;
-                switch($avatar['tipo_requisito']) {
-                    case 'actividades':
-                        $progreso_requisito = min(100, ($act_completadas / $avatar['requisito_valor']) * 100);
-                        break;
-                    case 'perfectas':
-                        $progreso_requisito = min(100, ($calificaciones_perfectas / $avatar['requisito_valor']) * 100);
-                        break;
-                    case 'cursos_completados':
-                        $progreso_requisito = min(100, ($cursos_completados / $avatar['requisito_valor']) * 100);
-                        break;
-                    case 'calificaciones_altas':
-                        $progreso_requisito = min(100, ($calificaciones_altas / $avatar['requisito_valor']) * 100);
-                        break;
-                }
+               // Calcular progreso del requisito
+$progreso_requisito = 0;
+$actual = 0;
+
+switch($avatar['tipo_requisito']) {
+    case 'actividades':
+        $actual = $act_completadas;
+        $progreso_requisito = min(100, ($act_completadas / max(1, $avatar['requisito_valor'])) * 100);
+        break;
+    case 'perfectas':
+        $actual = $calificaciones_perfectas;
+        $progreso_requisito = min(100, ($calificaciones_perfectas / max(1, $avatar['requisito_valor'])) * 100);
+        break;
+    case 'cursos_completados':
+        $actual = $cursos_completados;
+        $progreso_requisito = min(100, ($cursos_completados / max(1, $avatar['requisito_valor'])) * 100);
+        break;
+    case 'calificaciones_altas':
+        $actual = $calificaciones_altas;
+        $progreso_requisito = min(100, ($calificaciones_altas / max(1, $avatar['requisito_valor'])) * 100);
+        break;
+    case 'actividades_diferentes':
+        // Para este caso, usamos actividades completadas como base
+        $actual = $act_completadas;
+        $progreso_requisito = min(100, ($act_completadas / max(1, $avatar['requisito_valor'])) * 100);
+        break;
+    default:
+        $actual = 0;
+        $progreso_requisito = 0;
+        break;
+}
+
+// Para el caso especial de Zeus (requiere dos condiciones)
+if ($avatar['tipo_requisito'] == 'perfectas' && isset($avatar['requisito_extra'])) {
+    $progreso_requisito = min(100, (($calificaciones_perfectas / max(1, $avatar['requisito_valor'])) * 50) + (($act_completadas / max(1, $avatar['requisito_extra'])) * 50));
+}
+            
             ?>
             <div class="avatar-card fade-in-up <?php echo $card_class; ?>" data-categoria="<?php echo $avatar['categoria']; ?>" data-estado="<?php echo $card_class; ?>">
                 <?php if($avatar['desbloqueado']): ?>
@@ -1425,67 +1937,139 @@ $avatar_actual_info = $avatares[$avatar_actual] ?? $avatares['panda'];
             <?php endforeach; ?>
         </div>
         
-        <!-- Información de requisitos -->
-        <div class="side-panel fade-in-up" style="animation-delay: 0.5s">
-            <h4 class="panel-title">
-                <i class="fas fa-info-circle"></i>
-                ¿Cómo desbloquear más avatares?
-            </h4>
-            
-            <div class="activity-list">
-                <div class="activity-item">
-                    <div class="activity-icon" style="background: linear-gradient(135deg, var(--bronze), #CD7F32);">
-                        <i class="fas fa-tasks"></i>
+        <!-- Información de requisitos - Versión Mejorada -->
+<div class="tips-panel fade-in-up" style="animation-delay: 0.5s">
+    <div class="tips-header">
+        <div class="tips-icon">
+            <i class="fas fa-question-circle"></i>
+        </div>
+        <h3 class="tips-title">¡Conviértete en un Maestro del Desbloqueo!</h3>
+        <p class="tips-subtitle">Sigue estos consejos y colecciona todos los avatares</p>
+    </div>
+    
+    <div class="tips-grid">
+        <!-- Tip 1: Actividades -->
+        <div class="tip-card tip-actividades">
+            <div class="tip-icon">
+                <i class="fas fa-tasks"></i>
+            </div>
+            <div class="tip-content">
+                <h4 class="tip-name">Completa Actividades</h4>
+                <p class="tip-desc">Cada actividad completada te acerca a nuevos avatares. ¡Entre más completes, más desbloquearás!</p>
+                <div class="tip-progress">
+                    <span class="tip-label">Tu progreso:</span>
+                    <div class="tip-progress-bar">
+                        <div class="tip-progress-fill" style="width: <?php echo min(100, ($act_completadas / 50) * 100); ?>%"></div>
                     </div>
-                    <div class="activity-content">
-                        <div class="activity-title">Completa Actividades</div>
-                        <div class="activity-meta">
-                            <span>
-                                Cada actividad completada te acerca a nuevos avatares
-                            </span>
-                        </div>
-                    </div>
-                    <span class="activity-status status-obtained">
-                        <?php echo $act_completadas; ?> completadas
-                    </span>
+                    <span class="tip-value"><?php echo $act_completadas; ?> / 50+</span>
                 </div>
-                
-                <div class="activity-item">
-                    <div class="activity-icon" style="background: linear-gradient(135deg, var(--gold), #FFD700);">
-                        <i class="fas fa-star"></i>
+            </div>
+            <div class="tip-badge">
+                <i class="fas fa-star"></i>
+                <span>+<?php echo count(array_filter($avatares, function($a) { return $a['tipo_requisito'] == 'actividades'; })); ?> avatares</span>
+            </div>
+        </div>
+        
+        <!-- Tip 2: Calificaciones Perfectas -->
+        <div class="tip-card tip-perfectas">
+            <div class="tip-icon">
+                <i class="fas fa-star"></i>
+            </div>
+            <div class="tip-content">
+                <h4 class="tip-name">Calificaciones Perfectas</h4>
+                <p class="tip-desc">Obtén 10/10 en tus evaluaciones. ¡La perfección tiene su recompensa!</p>
+                <div class="tip-progress">
+                    <span class="tip-label">Tu progreso:</span>
+                    <div class="tip-progress-bar">
+                        <div class="tip-progress-fill" style="width: <?php echo min(100, ($calificaciones_perfectas / 20) * 100); ?>%"></div>
                     </div>
-                    <div class="activity-content">
-                        <div class="activity-title">Busca Calificaciones Perfectas</div>
-                        <div class="activity-meta">
-                            <span>
-                                Obtén 10/10 en tus actividades para avatares especiales
-                            </span>
-                        </div>
-                    </div>
-                    <span class="activity-status status-obtained">
-                        <?php echo $calificaciones_perfectas; ?> perfectas
-                    </span>
+                    <span class="tip-value"><?php echo $calificaciones_perfectas; ?> / 20+</span>
                 </div>
-                
-                <div class="activity-item">
-                    <div class="activity-icon" style="background: linear-gradient(135deg, var(--primary), #2ca5d4);">
-                        <i class="fas fa-graduation-cap"></i>
+            </div>
+            <div class="tip-badge">
+                <i class="fas fa-crown"></i>
+                <span>+<?php echo count(array_filter($avatares, function($a) { return $a['tipo_requisito'] == 'perfectas'; })); ?> avatares</span>
+            </div>
+        </div>
+        
+        <!-- Tip 3: Cursos Completados -->
+        <div class="tip-card tip-cursos">
+            <div class="tip-icon">
+                <i class="fas fa-graduation-cap"></i>
+            </div>
+            <div class="tip-content">
+                <h4 class="tip-name">Completa Cursos</h4>
+                <p class="tip-desc">Termina tus cursos al 100% y desbloquea avatares exclusivos y poderosos.</p>
+                <div class="tip-progress">
+                    <span class="tip-label">Tu progreso:</span>
+                    <div class="tip-progress-bar">
+                        <div class="tip-progress-fill" style="width: <?php echo min(100, ($cursos_completados / 5) * 100); ?>%"></div>
                     </div>
-                    <div class="activity-content">
-                        <div class="activity-title">Termina Tus Cursos</div>
-                        <div class="activity-meta">
-                            <span>
-                                Completa cursos al 100% para avatares exclusivos
-                            </span>
-                        </div>
-                    </div>
-                    <span class="activity-status status-obtained">
-                        <?php echo $cursos_completados; ?> completados
-                    </span>
+                    <span class="tip-value"><?php echo $cursos_completados; ?> / 5+</span>
                 </div>
+            </div>
+            <div class="tip-badge">
+                <i class="fas fa-trophy"></i>
+                <span>+<?php echo count(array_filter($avatares, function($a) { return $a['tipo_requisito'] == 'cursos_completados'; })); ?> avatares</span>
+            </div>
+        </div>
+        
+        <!-- Tip 4: Calificaciones Altas -->
+        <div class="tip-card tip-altas">
+            <div class="tip-icon">
+                <i class="fas fa-chart-line"></i>
+            </div>
+            <div class="tip-content">
+                <h4 class="tip-name">Mantén Calificaciones Altas</h4>
+                <p class="tip-desc">Calificaciones de 8 o más te abren las puertas a avatares épicos y legendarios.</p>
+                <div class="tip-progress">
+                    <span class="tip-label">Tu progreso:</span>
+                    <div class="tip-progress-bar">
+                        <div class="tip-progress-fill" style="width: <?php echo min(100, ($calificaciones_altas / 15) * 100); ?>%"></div>
+                    </div>
+                    <span class="tip-value"><?php echo $calificaciones_altas; ?> / 15+</span>
+                </div>
+            </div>
+            <div class="tip-badge">
+                <i class="fas fa-fire"></i>
+                <span>+<?php echo count(array_filter($avatares, function($a) { return $a['tipo_requisito'] == 'calificaciones_altas'; })); ?> avatares</span>
             </div>
         </div>
     </div>
+    
+    <!-- Leyenda de categorías -->
+    <div class="tips-footer">
+        <div class="legend-title">
+            <i class="fas fa-palette"></i> Categorías de Avatares
+        </div>
+        <div class="legend-items">
+            <div class="legend-item">
+                <span class="legend-color" style="background: var(--bronze);"></span>
+                <span>Inicial</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-color" style="background: var(--primary);"></span>
+                <span>Especial</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-color" style="background: var(--purple);"></span>
+                <span>Raro</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-color" style="background: var(--epic);"></span>
+                <span>Épico</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-color" style="background: var(--legendary);"></span>
+                <span>Legendario</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-color" style="background: var(--mythic);"></span>
+                <span>Mítico</span>
+            </div>
+        </div>
+    </div>
+</div>
     
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>

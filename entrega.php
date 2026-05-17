@@ -94,15 +94,42 @@ try {
 }
 
 // Avatares disponibles
+// Obtener avatar del alumno - ARREGLO COMPLETO
 $avatares = [
     'panda' => ['emoji' => '🐼', 'color' => '#3A506B', 'nivel' => 1],
+    'zorro' => ['emoji' => '🦊', 'color' => '#E67E22', 'nivel' => 1],
     'dragon' => ['emoji' => '🐉', 'color' => '#FF6B6B', 'nivel' => 1],
     'leon' => ['emoji' => '🦁', 'color' => '#FFD93D', 'nivel' => 2],
     'dino' => ['emoji' => '🦖', 'color' => '#6BCF7F', 'nivel' => 1],
     'robot' => ['emoji' => '🤖', 'color' => '#4D96FF', 'nivel' => 3],
     'astronauta' => ['emoji' => '👨‍🚀', 'color' => '#845EC2', 'nivel' => 4],
     'superheroe' => ['emoji' => '🦸‍♂️', 'color' => '#FF6B8B', 'nivel' => 5],
-    'mago' => ['emoji' => '🧙‍♂️', 'color' => '#00C2A8', 'nivel' => 6]
+    'mago' => ['emoji' => '🧙‍♂️', 'color' => '#00C2A8', 'nivel' => 6],
+    'ninja' => ['emoji' => '🥷', 'color' => '#4A4A4A', 'nivel' => 3],
+    'fenix' => ['emoji' => '🔥', 'color' => '#FF4500', 'nivel' => 7],
+    'unicornio' => ['emoji' => '🦄', 'color' => '#D65DB1', 'nivel' => 8],
+    'ballena' => ['emoji' => '🐋', 'color' => '#4169E1', 'nivel' => 3],
+    'aguila' => ['emoji' => '🦅', 'color' => '#DAA520', 'nivel' => 3],
+    'lobo' => ['emoji' => '🐺', 'color' => '#708090', 'nivel' => 3],
+    'pinguino' => ['emoji' => '🐧', 'color' => '#1C2833', 'nivel' => 2],
+    'bufalo' => ['emoji' => '🦬', 'color' => '#8B4513', 'nivel' => 2],
+    'conejo' => ['emoji' => '🐰', 'color' => '#F4A460', 'nivel' => 1],
+    'gato' => ['emoji' => '🐱', 'color' => '#FFA07A', 'nivel' => 1],
+    'perro' => ['emoji' => '🐶', 'color' => '#DEB887', 'nivel' => 1],
+    'raton' => ['emoji' => '🐭', 'color' => '#B0C4DE', 'nivel' => 1],
+    'abeja' => ['emoji' => '🐝', 'color' => '#FFD700', 'nivel' => 2],
+    'pulpo' => ['emoji' => '🐙', 'color' => '#CD5C5C', 'nivel' => 2],
+    'robot_avanzado' => ['emoji' => '🤖', 'color' => '#2E86AB', 'nivel' => 5],
+    'titan' => ['emoji' => '🏛️', 'color' => '#8B0000', 'nivel' => 4],
+    'centauro' => ['emoji' => '🏹', 'color' => '#CD853F', 'nivel' => 4],
+    'ciborg' => ['emoji' => '🦾', 'color' => '#4682B4', 'nivel' => 5],
+    'kraken' => ['emoji' => '🐙', 'color' => '#2F4F4F', 'nivel' => 5],
+    'valquiria' => ['emoji' => '⚔️', 'color' => '#C0C0C0', 'nivel' => 5],
+    'dios_ra' => ['emoji' => '☀️', 'color' => '#FFD700', 'nivel' => 6],
+    'leviathan' => ['emoji' => '🐉', 'color' => '#1a237e', 'nivel' => 6],
+    'thor' => ['emoji' => '🔨', 'color' => '#5DADE2', 'nivel' => 6],
+    'cerbero' => ['emoji' => '🐕‍🦺', 'color' => '#8B4513', 'nivel' => 6],
+    'zeus' => ['emoji' => '⚡', 'color' => '#FFD700', 'nivel' => 7]
 ];
 
 // Obtener avatar del alumno
