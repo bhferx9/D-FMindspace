@@ -7,8 +7,9 @@ if (!isset($_SESSION['user_id']) || !isset($_GET['id'])) {
     exit();
 }
 
-$id_curso = (int)$_GET['id'];
 $alumno_id = (int)$_SESSION['user_id'];
+$nombre_alumno = $_SESSION['nombre'];  // ← AGREGA ESTA LÍNEA
+$id_curso = (int)$_GET['id'];
 
 try {
     // Obtener info del curso
@@ -25,8 +26,32 @@ try {
     $stmt = $conn->pdo->prepare("SELECT * FROM actividades WHERE id_curso = :id_curso ORDER BY id");
     $stmt->execute([':id_curso' => $id_curso]);
     $actividades = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
-    // Obtener progreso actual
+    // Obtener entregas del alumno para calcular misiones pendientes en el sidebar
+    $stmt_entregas = $conn->pdo->prepare("
+        SELECT e.id_actividad, e.id as entrega_id, e.estado as estado_entrega
+        FROM entregas e
+        WHERE e.id_alumno = :alumno_id
+    ");
+    $stmt_entregas->execute([':alumno_id' => $alumno_id]);
+    $entregas_map = [];
+    while ($row = $stmt_entregas->fetch(PDO::FETCH_ASSOC)) {
+        $entregas_map[$row['id_actividad']] = $row;
+    }
+
+    // Construir $actividades_data para el sidebar
+    $actividades_data = [];
+    foreach ($actividades as $act) {
+        $entrega = $entregas_map[$act['id']] ?? null;
+        $actividades_data[] = [
+            'id' => $act['id'],
+            'titulo' => $act['titulo'],
+            'fecha_limite' => $act['fecha_limite'],
+            'entrega_id' => $entrega['entrega_id'] ?? null,
+            'estado_entrega' => $entrega['estado_entrega'] ?? null
+        ];
+    }
+        
+        // Obtener progreso actual
     $stmt = $conn->pdo->prepare("SELECT progreso FROM inscripciones WHERE id_alumno = :alumno_id AND id_curso = :id_curso");
     $stmt->execute([':alumno_id' => $alumno_id, ':id_curso' => $id_curso]);
     $progreso_data = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -94,8 +119,45 @@ $avatar_emoji = $avatares[$avatar_key]['emoji'];
 $avatar_color = $avatares[$avatar_key]['color'];
 
 // Función para verificar el estado de la tarea (CORREGIDA CON PDO)
-function verificarEstadoTarea($conn, $actividad_id, $alumno_id) {
+// Función para verificar el estado de la tarea (INCLUYE VALIDACIÓN DE FECHA VENCIDA)
+function verificarEstadoTarea($conn, $actividad_id, $alumno_id, $fecha_limite = null) {
     try {
+        // VERIFICAR SI LA MISIÓN ESTÁ VENCIDA
+        $esta_vencida = false;
+        if ($fecha_limite && !empty($fecha_limite)) {
+            $fecha_limite_ts = strtotime($fecha_limite);
+            $hoy = time();
+            
+            // Verificar si ya tiene entrega
+            $stmt_check = $conn->pdo->prepare("
+                SELECT COUNT(*) as tiene_entrega FROM entregas 
+                WHERE id_actividad = :id_actividad AND id_alumno = :alumno_id
+            ");
+            $stmt_check->execute([':id_actividad' => $actividad_id, ':alumno_id' => $alumno_id]);
+            $tiene_entrega = $stmt_check->fetch(PDO::FETCH_ASSOC)['tiene_entrega'] > 0;
+            
+            // Si pasó la fecha límite y NO ha entregado, está VENCIDA
+            if ($hoy > $fecha_limite_ts && !$tiene_entrega) {
+                $esta_vencida = true;
+            }
+        }
+        
+        // Si está VENCIDA, retornar estado especial
+        if ($esta_vencida) {
+            return [
+                'estado' => 'vencida',
+                'texto_boton' => 'Misión Vencida',
+                'clase_boton' => 'btn-start disabled',
+                'icono_boton' => 'fa-exclamation-triangle',
+                'mensaje' => '❌ Esta misión ha vencido. Ya no es posible entregarla.',
+                'intentos_restantes' => 0,
+                'intentos_usados' => 0,
+                'calificacion' => null,
+                'esta_vencida' => true
+            ];
+        }
+        
+        // Si no está vencida, continuar con la lógica normal
         // Obtener intentos permitidos de la actividad
         $stmt_act = $conn->pdo->prepare("SELECT intentos_permitidos FROM actividades WHERE id = :id");
         $stmt_act->execute([':id' => $actividad_id]);
@@ -133,11 +195,12 @@ function verificarEstadoTarea($conn, $actividad_id, $alumno_id) {
                     'texto_boton' => 'Ver Entrega',
                     'clase_boton' => 'btn-view',
                     'icono_boton' => 'fa-eye',
-                    'mensaje' => 'Ya completaste esta misión',
+                    'mensaje' => '✅ Misión completada',
                     'calificacion' => $envio_data['calificacion'] ?? null,
                     'fecha_envio' => $envio_data['fecha_entrega'] ?? null,
                     'intentos_usados' => $intentos_usados,
-                    'intentos_restantes' => 0
+                    'intentos_restantes' => 0,
+                    'esta_vencida' => false
                 ];
             } else {
                 $intentos_restantes = $intentos_permitidos - $intentos_usados;
@@ -146,10 +209,11 @@ function verificarEstadoTarea($conn, $actividad_id, $alumno_id) {
                     'texto_boton' => 'Volver a Intentar',
                     'clase_boton' => 'btn-retry',
                     'icono_boton' => 'fa-redo',
-                    'mensaje' => 'Intento ' . $intentos_usados . ' de ' . $intentos_permitidos . ' completado',
+                    'mensaje' => 'Intento ' . $intentos_usados . ' de ' . $intentos_permitidos,
                     'calificacion' => $envio_data['calificacion'] ?? null,
                     'intentos_restantes' => $intentos_restantes,
-                    'intentos_usados' => $intentos_usados
+                    'intentos_usados' => $intentos_usados,
+                    'esta_vencida' => false
                 ];
             }
         } else {
@@ -160,7 +224,8 @@ function verificarEstadoTarea($conn, $actividad_id, $alumno_id) {
                 'icono_boton' => 'fa-play',
                 'mensaje' => 'Primer intento de ' . $intentos_permitidos,
                 'intentos_restantes' => $intentos_permitidos,
-                'intentos_usados' => 0
+                'intentos_usados' => 0,
+                'esta_vencida' => false
             ];
         }
     } catch(PDOException $e) {
@@ -171,12 +236,12 @@ function verificarEstadoTarea($conn, $actividad_id, $alumno_id) {
             'icono_boton' => 'fa-play',
             'mensaje' => 'Primer intento',
             'intentos_restantes' => 1,
-            'intentos_usados' => 0
+            'intentos_usados' => 0,
+            'esta_vencida' => false
         ];
     }
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -266,11 +331,15 @@ function verificarEstadoTarea($conn, $actividad_id, $alumno_id) {
         }
         
         .logo-sub {
-            font-family: 'Fredoka One', cursive;
-            font-size: 1.1rem;
-            color: var(--accent);
-            font-weight: 600;
-        }
+        font-family: 'Poppins', sans-serif;
+        font-size: 1.2rem;
+        color: var(--primary);
+        font-weight: 600;
+        letter-spacing: 8px;
+        text-transform: uppercase;
+        margin-left: 10px;
+        position: relative;
+    }
         
         /* Avatar del niño */
         .kid-avatar {
@@ -1009,25 +1078,34 @@ function verificarEstadoTarea($conn, $actividad_id, $alumno_id) {
     <div class="floating-element" style="bottom: 15%; left: 5%; width: 80px; height: 80px; background: linear-gradient(135deg, rgba(240, 174, 42, 0.2), rgba(240, 174, 42, 0.1)); animation-delay: 1s;"></div>
     <div class="floating-element" style="top: 30%; left: 10%; width: 60px; height: 60px; background: linear-gradient(135deg, rgba(131, 191, 70, 0.2), rgba(131, 191, 70, 0.1)); animation-delay: 2s;"></div>
     
-    <!-- Sidebar infantil -->
     <div class="sidebar-kid">
         <!-- Contenido con scroll -->
         <div class="sidebar-content">
             <div class="sidebar-brand">
                 <div class="logo-container">
-                    <div class="logo-main">D&F</div>
-                    <div class="logo-sub">Aventuras de Aprendizaje</div>
+                <div class="logo-main">D&F</div>
+                <div class="logo-sub">mindspace</div>
+                <div class="tagline">
+                    <span>EXPLORA</span> • <span>CREA</span> • <span>APRENDE</span>
                 </div>
+            </div>
                 
                 <!-- Avatar del niño -->
                 <div class="kid-avatar" id="kidAvatar">
                     <span class="avatar-emoji"><?php echo $avatar_emoji; ?></span>
+                    <div class="avatar-status"></div>
                 </div>
                 
-                <h4 class="kid-name"><?php echo htmlspecialchars($_SESSION['nombre']); ?></h4>
+                <h4 class="kid-name"><?php echo $nombre_alumno; ?></h4>
                 <span class="kid-level">
-                    <i class="fas fa-star me-1"></i>Explorador
+                    <i class="fas fa-star me-1"></i>Nivel <?php echo $avatares[$avatar_key]['nivel']; ?>
                 </span>
+                
+                <!-- Puntos -->
+                <!-- <div class="points-container" style="text-align: center; padding: 15px; background: linear-gradient(135deg, rgba(255, 107, 139, 0.1), rgba(255, 107, 139, 0.05)); border-radius: 15px; margin: 15px;">
+                    <div class="points-value" style="font-size: 2rem; font-family: 'Fredoka One', cursive; color: var(--danger); margin: 5px 0;"><?php echo $puntos_alumno; ?></div>
+                    <div class="points-label" style="color: #666; font-size: 0.9rem;">Puntos de Aventura</div>
+                </div> -->
             </div>
             
             <!-- Navegación -->
@@ -1042,6 +1120,7 @@ function verificarEstadoTarea($conn, $actividad_id, $alumno_id) {
                     <a href="mis_cursos.php" class="nav-link">
                         <i class="fas fa-compass"></i>
                         <span>Mis Aventuras</span>
+                        <!-- NOTIFICACIÓN ELIMINADA - No debe mostrar número -->
                     </a>
                 </li>
                 <li class="nav-item">
@@ -1051,15 +1130,36 @@ function verificarEstadoTarea($conn, $actividad_id, $alumno_id) {
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a href="mis_actividades.php" class="nav-link">
-                        <i class="fas fa-tasks"></i>
-                        <span>Mis Misiones</span>
-                    </a>
-                </li>
+    <a href="mis_actividades.php" class="nav-link">
+        <i class="fas fa-tasks"></i>
+        <span>Mis Misiones</span>
+        <?php 
+        // Calcular misiones PENDIENTES para el ALUMNO
+        $misiones_pendientes = 0;
+        foreach($actividades_data as $act) {
+            // Verificar si está vencida
+            $fecha_limite = strtotime($act['fecha_limite']);
+            $hoy = time();
+            $tiene_fecha_limite = $act['fecha_limite'] && !empty($act['fecha_limite']);
+            
+            // Está vencida si: tiene fecha, la fecha pasó, y NO ha entregado
+            $vencida = $tiene_fecha_limite && $hoy > $fecha_limite && !$act['entrega_id'];
+            
+            // Pendiente solo si: NO ha entregado Y NO está vencida
+            if (!$act['entrega_id'] && !$vencida) {
+                $misiones_pendientes++;
+            }
+        }
+        ?>
+        <?php if($misiones_pendientes > 0): ?>
+            <span class="badge-notification ms-auto"><?php echo $misiones_pendientes; ?></span>
+        <?php endif; ?>
+    </a>
+</li>
                 <li class="nav-item">
-                    <a href="mis_logros.php" class="nav-link">
-                        <i class="fas fa-trophy"></i>
-                        <span>Mis Logros</span>
+                    <a href="avatar_shop.php" class="nav-link">
+                        <i class="fas fa-user-astronaut"></i>
+                        <span>Tienda de Avatares</span>
                     </a>
                 </li>
             </ul>
@@ -1163,7 +1263,7 @@ function verificarEstadoTarea($conn, $actividad_id, $alumno_id) {
                     }
                     
                     // Verificar estado de la tarea
-                    $estado_tarea = verificarEstadoTarea($conn, $act['id'], $alumno_id);
+                    $estado_tarea = verificarEstadoTarea($conn, $act['id'], $alumno_id, $act['fecha_limite']);
                     $status_class = '';
                     switch($estado_tarea['estado']) {
                         case 'bloqueada': $status_class = 'status-blocked'; break;
@@ -1229,6 +1329,13 @@ function verificarEstadoTarea($conn, $actividad_id, $alumno_id) {
                                 <span class="ms-auto">Intentos restantes: <?php echo $estado_tarea['intentos_restantes']; ?></span>
                             <?php endif; ?>
                         </div>
+
+                        <?php if(isset($estado_tarea['esta_vencida']) && $estado_tarea['esta_vencida']): ?>
+                            <div class="alert alert-danger mt-3 text-center" style="border-radius: 15px;">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                <strong>¡Misión Vencida!</strong> La fecha límite para entregar esta misión ha expirado.
+                            </div>
+                        <?php endif; ?>
                         
                         <!-- Mostrar calificación si está bloqueada -->
                         <?php if($estado_tarea['estado'] == 'bloqueada' && isset($estado_tarea['calificacion'])): ?>

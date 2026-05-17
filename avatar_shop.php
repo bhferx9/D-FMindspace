@@ -76,6 +76,27 @@ $res_tiempo = mysqli_query($conn, $query_tiempo_total);
 $tiempo_actividades = mysqli_fetch_assoc($res_tiempo)['total'] ?? 0;
 
 // =============================================
+// OBTENER ACTIVIDADES PARA EL SIDEBAR
+// =============================================
+$actividades_data = [];
+try {
+    $stmt_actividades = $conn->pdo->prepare("
+        SELECT a.id, a.titulo, a.fecha_limite, 
+               e.id as entrega_id, e.estado as estado_entrega
+        FROM actividades a
+        JOIN cursos c ON a.id_curso = c.id
+        JOIN inscripciones i ON c.id = i.id_curso
+        LEFT JOIN entregas e ON a.id = e.id_actividad AND e.id_alumno = :alumno_id
+        WHERE i.id_alumno = :alumno_id AND i.estado = 'activo'
+        ORDER BY a.fecha_limite ASC
+    ");
+    $stmt_actividades->execute([':alumno_id' => $alumno_id]);
+    $actividades_data = $stmt_actividades->fetchAll(PDO::FETCH_ASSOC);
+} catch(PDOException $e) {
+    $actividades_data = [];
+}
+
+// =============================================
 // SISTEMA DE AVATARES - Panda siempre disponible
 // =============================================
 $avatares = [
@@ -1637,9 +1658,7 @@ $avatar_actual_info = $avatares[$avatar_actual] ?? $avatares['panda'];
                     <a href="mis_cursos.php" class="nav-link">
                         <i class="fas fa-compass"></i>
                         <span>Mis Aventuras</span>
-                        <?php if(mysqli_num_rows($res_cursos) > 0): ?>
-                            <span class="badge-notification ms-auto"><?php echo mysqli_num_rows($res_cursos); ?></span>
-                        <?php endif; ?>
+                        <!-- NOTIFICACIÓN ELIMINADA - No debe mostrar número -->
                     </a>
                 </li>
                 <li class="nav-item">
@@ -1652,8 +1671,30 @@ $avatar_actual_info = $avatares[$avatar_actual] ?? $avatares['panda'];
                     <a href="mis_actividades.php" class="nav-link">
                         <i class="fas fa-tasks"></i>
                         <span>Mis Misiones</span>
-                        <?php if(mysqli_num_rows($res_actividades) > 0): ?>
-                            <span class="badge-notification ms-auto"><?php echo mysqli_num_rows($res_actividades); ?></span>
+                        <?php 
+                        // Calcular misiones PENDIENTES para el ALUMNO
+                        // Pendiente = NO ha entregado Y NO está vencida
+                        $misiones_pendientes = 0;
+                        foreach($actividades_data as $act) {
+                            // Verificar si está vencida
+                            $fecha_limite = strtotime($act['fecha_limite']);
+                            $hoy = time();
+                            $tiene_fecha_limite = $act['fecha_limite'] && !empty($act['fecha_limite']);
+                            
+                            // Está vencida si: tiene fecha, la fecha pasó, y NO ha entregado
+                            $vencida = $tiene_fecha_limite && $hoy > $fecha_limite && !$act['entrega_id'];
+                            
+                            // Para el alumno, una misión está PENDIENTE solo si:
+                            // NO ha entregado Y NO está vencida
+                            $es_pendiente = (!$act['entrega_id'] && !$vencida);
+                            
+                            if ($es_pendiente) {
+                                $misiones_pendientes++;
+                            }
+                        }
+                        ?>
+                        <?php if($misiones_pendientes > 0): ?>
+                            <span class="badge-notification ms-auto"><?php echo $misiones_pendientes; ?></span>
                         <?php endif; ?>
                     </a>
                 </li>

@@ -7,156 +7,209 @@ if (!isset($_SESSION['user_id']) || $_SESSION['tipo'] != 'tutor') {
     exit();
 }
 
-$tutor_id = $_SESSION['user_id'];
+$tutor_id = (int)$_SESSION['user_id'];
 
-// Obtener cursos para el formulario y filtro
-$sql_cursos = "SELECT id, nombre FROM cursos WHERE id_tutor = '$tutor_id' ORDER BY nombre ASC";
-$res_cursos = mysqli_query($conn, $sql_cursos);
-
-// Obtener cursos para array
-$cursos_array = [];
-while($curso = mysqli_fetch_assoc($res_cursos)) {
-    $cursos_array[$curso['id']] = $curso['nombre'];
+// ============================================================
+// OBTENER CURSOS DEL TUTOR (PDO)
+// ============================================================
+try {
+    $stmt = $conn->pdo->prepare("SELECT id, nombre FROM cursos WHERE id_tutor = :tutor_id ORDER BY nombre ASC");
+    $stmt->execute([':tutor_id' => $tutor_id]);
+    $cursos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $cursos_array = [];
+    foreach ($cursos as $curso) {
+        $cursos_array[$curso['id']] = $curso['nombre'];
+    }
+} catch(PDOException $e) {
+    $cursos = [];
+    $cursos_array = [];
 }
-mysqli_data_seek($res_cursos, 0);
 
 // Inicializar variables
 $activity_data = null;
 $success_message = '';
 $error_message = '';
-$curso_filtro = isset($_GET['curso']) ? intval($_GET['curso']) : 0;
+$curso_filtro = isset($_GET['curso']) ? (int)$_GET['curso'] : 0;
 
-// Manejar solicitud de datos para edición (GET)
+// ============================================================
+// MANEJAR EDICIÓN (GET)
+// ============================================================
 if (isset($_GET['edit_id']) && is_numeric($_GET['edit_id'])) {
-    $edit_id = intval($_GET['edit_id']);
+    $edit_id = (int)$_GET['edit_id'];
     
-    // Obtener datos de la actividad
-    $sql_activity = "SELECT a.*, c.id_tutor 
-                    FROM actividades a
-                    JOIN cursos c ON a.id_curso = c.id
-                    WHERE a.id = '$edit_id' AND c.id_tutor = '$tutor_id'";
-    
-    $result_activity = mysqli_query($conn, $sql_activity);
-    
-    if (mysqli_num_rows($result_activity) > 0) {
-        $activity_data = mysqli_fetch_assoc($result_activity);
+    try {
+        $stmt = $conn->pdo->prepare("
+            SELECT a.*, c.id_tutor 
+            FROM actividades a
+            JOIN cursos c ON a.id_curso = c.id
+            WHERE a.id = :edit_id AND c.id_tutor = :tutor_id
+        ");
+        $stmt->execute([':edit_id' => $edit_id, ':tutor_id' => $tutor_id]);
         
-        // Convertir fecha al formato correcto para el input
-        $activity_data['fecha_formatted'] = date('Y-m-d', strtotime($activity_data['fecha_limite']));
-    } else {
-        $error_message = "Actividad no encontrada o no tienes permiso para editarla.";
+        if ($stmt->rowCount() > 0) {
+            $activity_data = $stmt->fetch(PDO::FETCH_ASSOC);
+            $activity_data['fecha_formatted'] = date('Y-m-d', strtotime($activity_data['fecha_limite']));
+        } else {
+            $error_message = "Actividad no encontrada o no tienes permiso para editarla.";
+        }
+    } catch(PDOException $e) {
+        $error_message = "Error al cargar la actividad: " . $e->getMessage();
     }
 }
 
-// Manejar actualización de actividad (POST)
+// ============================================================
+// MANEJAR ACTUALIZACIÓN (POST)
+// ============================================================
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['editar_actividad'])) {
-    $id_actividad = intval($_POST['id_actividad']);
-    $id_curso = mysqli_real_escape_string($conn, $_POST['id_curso']);
-    $titulo = mysqli_real_escape_string($conn, trim($_POST['titulo']));
-    $descripcion = mysqli_real_escape_string($conn, trim($_POST['descripcion']));
-    $tipo = mysqli_real_escape_string($conn, $_POST['tipo']);
-    $dificultad = mysqli_real_escape_string($conn, $_POST['dificultad']);
-    $fecha_limite = mysqli_real_escape_string($conn, $_POST['fecha_limite']);
-    $puntos = intval($_POST['puntos']);
-    
-    // Validaciones
+    $id_actividad = (int)$_POST['id_actividad'];
+    $id_curso = (int)$_POST['id_curso'];
+    $titulo = trim($_POST['titulo'] ?? '');
+    $descripcion = trim($_POST['descripcion'] ?? '');
+    $tipo = $_POST['tipo'] ?? 'Quiz';
+    $dificultad = $_POST['dificultad'] ?? 'Normal';
+    $fecha_limite = $_POST['fecha_limite'] ?? null;
+    $puntos = (int)$_POST['puntos'];
+
     if (empty($titulo) || strlen($titulo) < 3) {
         $error_message = "El título debe tener al menos 3 caracteres.";
     } elseif ($puntos < 1 || $puntos > 1000) {
         $error_message = "Los puntos deben estar entre 1 y 1000.";
     } else {
-        // Verificar que la actividad pertenezca al tutor
-        $sql_verificar = "SELECT a.id FROM actividades a 
-                         JOIN cursos c ON a.id_curso = c.id 
-                         WHERE a.id = '$id_actividad' AND c.id_tutor = '$tutor_id'";
-        $verificar = mysqli_query($conn, $sql_verificar);
-        
-        if (mysqli_num_rows($verificar) > 0) {
-            $sql_update = "UPDATE actividades SET 
-                          id_curso = '$id_curso',
-                          titulo = '$titulo',
-                          descripcion = '$descripcion',
-                          tipo = '$tipo',
-                          dificultad = '$dificultad',
-                          fecha_limite = '$fecha_limite',
-                          puntos = '$puntos'
-                          WHERE id = '$id_actividad'";
+        try {
+            // Verificar que la actividad pertenezca al tutor
+            $check = $conn->pdo->prepare("
+                SELECT a.id FROM actividades a 
+                JOIN cursos c ON a.id_curso = c.id 
+                WHERE a.id = :id_actividad AND c.id_tutor = :tutor_id
+            ");
+            $check->execute([':id_actividad' => $id_actividad, ':tutor_id' => $tutor_id]);
             
-            if (mysqli_query($conn, $sql_update)) {
+            if ($check->rowCount() > 0) {
+                $update = $conn->pdo->prepare("
+                    UPDATE actividades SET 
+                        id_curso = :id_curso,
+                        titulo = :titulo,
+                        descripcion = :descripcion,
+                        tipo = :tipo,
+                        dificultad = :dificultad,
+                        fecha_limite = :fecha_limite,
+                        puntos = :puntos
+                    WHERE id = :id_actividad
+                ");
+                $update->execute([
+                    ':id_curso' => $id_curso,
+                    ':titulo' => $titulo,
+                    ':descripcion' => $descripcion,
+                    ':tipo' => $tipo,
+                    ':dificultad' => $dificultad,
+                    ':fecha_limite' => $fecha_limite,
+                    ':puntos' => $puntos,
+                    ':id_actividad' => $id_actividad
+                ]);
+                
                 $success_message = "🎉 ¡Misión actualizada exitosamente!";
                 
-                // Obtener datos actualizados para el modal
-                $sql_updated = "SELECT a.* FROM actividades a WHERE a.id = '$id_actividad'";
-                $result_updated = mysqli_query($conn, $sql_updated);
-                $activity_data = mysqli_fetch_assoc($result_updated);
+                // Recargar datos actualizados
+                $stmt = $conn->pdo->prepare("SELECT * FROM actividades WHERE id = :id");
+                $stmt->execute([':id' => $id_actividad]);
+                $activity_data = $stmt->fetch(PDO::FETCH_ASSOC);
                 $activity_data['fecha_formatted'] = date('Y-m-d', strtotime($activity_data['fecha_limite']));
             } else {
-                $error_message = "Error al actualizar: " . mysqli_error($conn);
+                $error_message = "No tienes permiso para editar esta actividad.";
             }
-        } else {
-            $error_message = "No tienes permiso para editar esta actividad.";
+        } catch(PDOException $e) {
+            $error_message = "Error al actualizar: " . $e->getMessage();
         }
     }
 }
 
-// Manejar eliminación de actividad
+// ============================================================
+// MANEJAR ELIMINACIÓN (GET)
+// ============================================================
 if (isset($_GET['eliminar']) && is_numeric($_GET['eliminar'])) {
-    $id_eliminar = intval($_GET['eliminar']);
+    $id_eliminar = (int)$_GET['eliminar'];
     
-    // Verificar que la actividad pertenezca al tutor
-    $sql_verificar = "SELECT c.id FROM actividades a 
-                     JOIN cursos c ON a.id_curso = c.id 
-                     WHERE a.id = '$id_eliminar' AND c.id_tutor = '$tutor_id'";
-    $verificar = mysqli_query($conn, $sql_verificar);
-    
-    if (mysqli_num_rows($verificar) > 0) {
-        // Verificar si hay entregas relacionadas
-        $sql_check_entregas = "SELECT COUNT(*) as total FROM entregas WHERE id_actividad = '$id_eliminar'";
-        $res_check = mysqli_query($conn, $sql_check_entregas);
-        $row_check = mysqli_fetch_assoc($res_check);
+    try {
+        $check = $conn->pdo->prepare("
+            SELECT c.id FROM actividades a 
+            JOIN cursos c ON a.id_curso = c.id 
+            WHERE a.id = :id AND c.id_tutor = :tutor_id
+        ");
+        $check->execute([':id' => $id_eliminar, ':tutor_id' => $tutor_id]);
         
-        if ($row_check['total'] > 0) {
-            $error_message = "No se puede eliminar: Hay entregas asociadas a esta actividad.";
-        } else {
-            $sql_delete = "DELETE FROM actividades WHERE id = '$id_eliminar'";
+        if ($check->rowCount() > 0) {
+            // Verificar entregas asociadas
+            $check_entregas = $conn->pdo->prepare("SELECT COUNT(*) as total FROM entregas WHERE id_actividad = :id");
+            $check_entregas->execute([':id' => $id_eliminar]);
+            $row_check = $check_entregas->fetch(PDO::FETCH_ASSOC);
             
-            if (mysqli_query($conn, $sql_delete)) {
-                $success_message = "¡Misión eliminada exitosamente!";
+            if ($row_check['total'] > 0) {
+                $error_message = "No se puede eliminar: Hay entregas asociadas a esta actividad.";
             } else {
-                $error_message = "Error al eliminar la misión: " . mysqli_error($conn);
+                $delete = $conn->pdo->prepare("DELETE FROM actividades WHERE id = :id");
+                $delete->execute([':id' => $id_eliminar]);
+                $success_message = "¡Misión eliminada exitosamente!";
             }
+        } else {
+            $error_message = "No tienes permiso para eliminar esta actividad.";
         }
-    } else {
-        $error_message = "No tienes permiso para eliminar esta actividad.";
+    } catch(PDOException $e) {
+        $error_message = "Error al eliminar: " . $e->getMessage();
     }
 }
 
-// Consultar actividades con filtro por curso
-$sql_base = "SELECT a.*, c.nombre as curso_nombre, c.id as curso_id
+// ============================================================
+// CONSULTAR ACTIVIDADES CON FILTRO
+// ============================================================
+try {
+    $sql = "
+        SELECT a.*, c.nombre as curso_nombre, c.id as curso_id
         FROM actividades a
         JOIN cursos c ON a.id_curso = c.id
-        WHERE c.id_tutor = '$tutor_id'";
-        
-// Aplicar filtro si está seleccionado
-if ($curso_filtro > 0) {
-    $sql_base .= " AND c.id = '$curso_filtro'";
+        WHERE c.id_tutor = :tutor_id
+    ";
+    
+    if ($curso_filtro > 0) {
+        $sql .= " AND c.id = :curso_filtro";
+    }
+    $sql .= " ORDER BY c.nombre, a.fecha_limite ASC";
+    
+    $stmt = $conn->pdo->prepare($sql);
+    $params = [':tutor_id' => $tutor_id];
+    if ($curso_filtro > 0) {
+        $params[':curso_filtro'] = $curso_filtro;
+    }
+    $stmt->execute($params);
+    $actividades = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $total_actividades = count($actividades);
+    
+} catch(PDOException $e) {
+    $actividades = [];
+    $total_actividades = 0;
 }
 
-$sql = $sql_base . " ORDER BY c.nombre, a.fecha_limite ASC";
+// ============================================================
+// ESTADÍSTICAS POR CURSO
+// ============================================================
+try {
+    $stmt = $conn->pdo->prepare("
+        SELECT c.id, c.nombre, COUNT(a.id) as total_actividades,
+               SUM(CASE WHEN a.fecha_limite < CURRENT_DATE THEN 1 ELSE 0 END) as vencidas
+        FROM cursos c
+        LEFT JOIN actividades a ON c.id = a.id_curso
+        WHERE c.id_tutor = :tutor_id
+        GROUP BY c.id, c.nombre
+        ORDER BY c.nombre ASC
+    ");
+    $stmt->execute([':tutor_id' => $tutor_id]);
+    $stats_cursos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch(PDOException $e) {
+    $stats_cursos = [];
+}
 
-$res = mysqli_query($conn, $sql);
-
-// Obtener estadísticas por curso - CORREGIDO PARA POSTGRESQL
-$sql_stats = "SELECT c.id, c.nombre, COUNT(a.id) as total_actividades,
-              SUM(CASE WHEN a.fecha_limite < CURRENT_DATE THEN 1 ELSE 0 END) as vencidas
-              FROM cursos c
-              LEFT JOIN actividades a ON c.id = a.id_curso
-              WHERE c.id_tutor = '$tutor_id'
-              GROUP BY c.id
-              ORDER BY c.nombre ASC";
-$res_stats = mysqli_query($conn, $sql_stats);
-
-// Funciones auxiliares
+// ============================================================
+// FUNCIONES AUXILIARES
+// ============================================================
 function getActividadIcono($tipo) {
     $iconos = [
         'Quiz' => 'fas fa-question-circle',
@@ -177,15 +230,6 @@ function getDificultadColor($dificultad) {
     ];
     return $colores[$dificultad] ?? 'secondary';
 }
-
-// Obtener actividades agrupadas por curso para el filtro 
-$sql_grouped = "SELECT c.id, c.nombre, STRING_AGG(a.id::text, ',') as actividades_ids
-                FROM cursos c
-                LEFT JOIN actividades a ON c.id = a.id_curso
-                WHERE c.id_tutor = '$tutor_id'
-                GROUP BY c.id
-                ORDER BY c.nombre ASC";
-$res_grouped = mysqli_query($conn, $sql_grouped);
 ?>
 
 <!DOCTYPE html>
@@ -983,152 +1027,150 @@ $res_grouped = mysqli_query($conn, $sql_grouped);
                 <a href="?curso=0" class="filter-btn <?php echo $curso_filtro == 0 ? 'active' : ''; ?>">
                     <i class="fas fa-layer-group"></i>
                     Todos los Cursos
-                    <span class="badge"><?php echo mysqli_num_rows($res); ?></span>
+                    <span class="badge"><?php echo $total_actividades; ?></span>
                 </a>
                 
-                <?php while($stats = mysqli_fetch_assoc($res_stats)): 
-                    $es_activo = $curso_filtro == $stats['id'];
+                <?php foreach($stats_cursos as $stat): 
+                    $es_activo = $curso_filtro == $stat['id'];
                 ?>
-                    <a href="?curso=<?php echo $stats['id']; ?>" 
-                       class="filter-btn <?php echo $es_activo ? 'active' : ''; ?>">
+                    <a href="?curso=<?php echo $stat['id']; ?>" 
+                    class="filter-btn <?php echo $es_activo ? 'active' : ''; ?>">
                         <i class="fas fa-book"></i>
-                        <?php echo htmlspecialchars($stats['nombre']); ?>
-                        <span class="badge"><?php echo $stats['total_actividades']; ?></span>
+                        <?php echo htmlspecialchars($stat['nombre']); ?>
+                        <span class="badge"><?php echo $stat['total_actividades']; ?></span>
                     </a>
-                <?php endwhile; ?>
+                <?php endforeach; ?>
             </div>
         </div>
         
         <!-- Mostrar actividades -->
-        <?php if(mysqli_num_rows($res) > 0): ?>
-            <?php
-            // Agrupar actividades por curso
-            $actividades_por_curso = [];
-            mysqli_data_seek($res, 0);
-            while($act = mysqli_fetch_assoc($res)) {
-                $curso_id = $act['curso_id'];
-                if (!isset($actividades_por_curso[$curso_id])) {
-                    $actividades_por_curso[$curso_id] = [
-                        'nombre' => $act['curso_nombre'],
-                        'actividades' => []
-                    ];
-                }
-                $actividades_por_curso[$curso_id]['actividades'][] = $act;
+        <?php if($total_actividades > 0): ?>
+        <?php
+        // Agrupar actividades por curso
+        $actividades_por_curso = [];
+        foreach($actividades as $act) {
+            $curso_id = $act['curso_id'];
+            if (!isset($actividades_por_curso[$curso_id])) {
+                $actividades_por_curso[$curso_id] = [
+                    'nombre' => $act['curso_nombre'],
+                    'actividades' => []
+                ];
             }
-            
-            // Mostrar secciones por curso
-            foreach($actividades_por_curso as $curso_id => $curso_data):
-                $total_actividades = count($curso_data['actividades']);
-            ?>
-                <div class="course-section animate__animated animate__fadeInUp">
-                    <div class="course-header">
-                        <div class="course-icon">
-                            <i class="fas fa-book"></i>
+            $actividades_por_curso[$curso_id]['actividades'][] = $act;
+        }
+        
+        // Mostrar secciones por curso
+        foreach($actividades_por_curso as $curso_id => $curso_data):
+            $total_actividades_curso = count($curso_data['actividades']);
+        ?>
+            <div class="course-section animate__animated animate__fadeInUp">
+                <div class="course-header">
+                    <div class="course-icon">
+                        <i class="fas fa-book"></i>
+                    </div>
+                    <div>
+                        <div class="course-title"><?php echo htmlspecialchars($curso_data['nombre']); ?></div>
+                        <div class="course-meta">
+                            <span class="course-count">
+                                <i class="fas fa-tasks me-1"></i> <?php echo $total_actividades_curso; ?> misiones
+                            </span>
+                            <?php if($curso_filtro == 0): ?>
+                                <a href="?curso=<?php echo $curso_id; ?>" class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-eye me-1"></i> Ver solo este curso
+                                </a>
+                            <?php endif; ?>
                         </div>
-                        <div>
-                            <div class="course-title"><?php echo htmlspecialchars($curso_data['nombre']); ?></div>
-                            <div class="course-meta">
-                                <span class="course-count">
-                                    <i class="fas fa-tasks me-1"></i> <?php echo $total_actividades; ?> misiones
+                    </div>
+                </div>
+                
+                <div class="activities-grid">
+                    <?php foreach($curso_data['actividades'] as $act): 
+                        $icono = getActividadIcono($act['tipo']);
+                        $dificultad_color = getDificultadColor($act['dificultad']);
+                        
+                        $fecha_limite = new DateTime($act['fecha_limite']);
+                        $hoy = new DateTime();
+                        $diferencia = $hoy->diff($fecha_limite);
+                        $dias_restantes = $diferencia->days;
+                        $es_proxima = $dias_restantes <= 3;
+                    ?>
+                        <div class="activity-card" id="activity-<?php echo $act['id']; ?>">
+                            <div class="d-flex justify-content-between align-items-start mb-3">
+                                <span class="course-badge">
+                                    <i class="fas fa-book me-2"></i><?php echo htmlspecialchars($act['curso_nombre']); ?>
                                 </span>
-                                <?php if($curso_filtro == 0): ?>
-                                    <a href="?curso=<?php echo $curso_id; ?>" class="btn btn-sm btn-outline-primary">
-                                        <i class="fas fa-eye me-1"></i> Ver solo este curso
-                                    </a>
-                                <?php endif; ?>
+                                <span class="points-badge">
+                                    <i class="fas fa-trophy"></i> <?php echo $act['puntos']; ?> XP
+                                </span>
+                            </div>
+                            
+                            <h3 class="activity-title"><?php echo htmlspecialchars($act['titulo']); ?></h3>
+                            
+                            <?php if(!empty($act['descripcion'])): ?>
+                                <p class="activity-description"><?php echo htmlspecialchars($act['descripcion']); ?></p>
+                            <?php endif; ?>
+                            
+                            <div class="activity-meta">
+                                <span class="activity-type">
+                                    <i class="<?php echo str_replace('fas fa-', '', $icono); ?> me-2"></i>
+                                    <?php echo htmlspecialchars($act['tipo']); ?>
+                                </span>
+                                <span class="activity-difficulty difficulty-<?php echo strtolower($act['dificultad']); ?>">
+                                    <?php if($act['dificultad'] == 'Fácil'): ?>
+                                        <i class="fas fa-star"></i>
+                                    <?php elseif($act['dificultad'] == 'Normal'): ?>
+                                        <i class="fas fa-star"></i><i class="fas fa-star"></i>
+                                    <?php elseif($act['dificultad'] == 'Difícil'): ?>
+                                        <i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i>
+                                    <?php endif; ?>
+                                    <?php echo htmlspecialchars($act['dificultad']); ?>
+                                </span>
+                            </div>
+                            
+                            <div class="<?php echo $es_proxima ? 'deadline-warning' : 'deadline-normal'; ?>">
+                                <i class="fas fa-<?php echo $es_proxima ? 'exclamation-triangle' : 'calendar-alt'; ?>"></i>
+                                <div>
+                                    <strong>Fecha Límite:</strong>
+                                    <div><?php echo date('d/m/Y', strtotime($act['fecha_limite'])); ?></div>
+                                    <?php if($es_proxima): ?>
+                                        <small class="text-danger fw-bold">(<?php echo $dias_restantes; ?> días restantes)</small>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                            
+                            <div class="btn-action-group">
+                                <button type="button" class="btn-edit" onclick="openEditModal(<?php echo $act['id']; ?>)">
+                                    <i class="fas fa-edit"></i> Editar
+                                </button>
+                                <button type="button" class="btn-delete" onclick="openDeleteModal(<?php echo $act['id']; ?>, '<?php echo htmlspecialchars(addslashes($act['titulo'])); ?>')">
+                                    <i class="fas fa-trash"></i> Eliminar
+                                </button>
                             </div>
                         </div>
-                    </div>
-                    
-                    <div class="activities-grid">
-                        <?php foreach($curso_data['actividades'] as $act): 
-                            $icono = getActividadIcono($act['tipo']);
-                            $dificultad_color = getDificultadColor($act['dificultad']);
-                            
-                            // Verificar si la fecha límite está próxima
-                            $fecha_limite = new DateTime($act['fecha_limite']);
-                            $hoy = new DateTime();
-                            $diferencia = $hoy->diff($fecha_limite);
-                            $dias_restantes = $diferencia->days;
-                            $es_proxima = $dias_restantes <= 3;
-                        ?>
-                            <div class="activity-card" id="activity-<?php echo $act['id']; ?>">
-                                <div class="d-flex justify-content-between align-items-start mb-3">
-                                    <span class="course-badge">
-                                        <i class="fas fa-book me-2"></i><?php echo htmlspecialchars($act['curso_nombre']); ?>
-                                    </span>
-                                    <span class="points-badge">
-                                        <i class="fas fa-trophy"></i> <?php echo $act['puntos']; ?> XP
-                                    </span>
-                                </div>
-                                
-                                <h3 class="activity-title"><?php echo htmlspecialchars($act['titulo']); ?></h3>
-                                
-                                <?php if(!empty($act['descripcion'])): ?>
-                                    <p class="activity-description"><?php echo htmlspecialchars($act['descripcion']); ?></p>
-                                <?php endif; ?>
-                                
-                                <div class="activity-meta">
-                                    <span class="activity-type">
-                                        <i class="<?php echo str_replace('fas fa-', '', $icono); ?> me-2"></i>
-                                        <?php echo htmlspecialchars($act['tipo']); ?>
-                                    </span>
-                                    <span class="activity-difficulty difficulty-<?php echo strtolower($act['dificultad']); ?>">
-                                        <?php if($act['dificultad'] == 'Fácil'): ?>
-                                            <i class="fas fa-star"></i>
-                                        <?php elseif($act['dificultad'] == 'Normal'): ?>
-                                            <i class="fas fa-star"></i><i class="fas fa-star"></i>
-                                        <?php elseif($act['dificultad'] == 'Difícil'): ?>
-                                            <i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i>
-                                        <?php endif; ?>
-                                        <?php echo htmlspecialchars($act['dificultad']); ?>
-                                    </span>
-                                </div>
-                                
-                                <div class="<?php echo $es_proxima ? 'deadline-warning' : 'deadline-normal'; ?>">
-                                    <i class="fas fa-<?php echo $es_proxima ? 'exclamation-triangle' : 'calendar-alt'; ?>"></i>
-                                    <div>
-                                        <strong>Fecha Límite:</strong>
-                                        <div><?php echo date('d/m/Y', strtotime($act['fecha_limite'])); ?></div>
-                                        <?php if($es_proxima): ?>
-                                            <small class="text-danger fw-bold">(<?php echo $dias_restantes; ?> días restantes)</small>
-                                        <?php endif; ?>
-                                    </div>
-                                </div>
-                                
-                                <div class="btn-action-group">
-                                    <button type="button" class="btn-edit" onclick="openEditModal(<?php echo $act['id']; ?>)">
-                                        <i class="fas fa-edit"></i> Editar
-                                    </button>
-                                    <button type="button" class="btn-delete" onclick="openDeleteModal(<?php echo $act['id']; ?>, '<?php echo htmlspecialchars(addslashes($act['titulo'])); ?>')">
-                                        <i class="fas fa-trash"></i> Eliminar
-                                    </button>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
+                    <?php endforeach; ?>
                 </div>
-            <?php endforeach; ?>
-            
-        <?php else: ?>
-            <div class="no-activities animate__animated animate__fadeIn">
-                <div class="no-activities-icon">
-                    <i class="fas fa-tasks"></i>
-                </div>
-                <h3><?php echo $curso_filtro > 0 ? '¡No hay misiones en este curso!' : '¡Comienza la Aventura! 🚀'; ?></h3>
-                <p>
-                    <?php if($curso_filtro > 0): ?>
-                        Este curso aún no tiene misiones. ¡Crea la primera para tus exploradores!
-                    <?php else: ?>
-                        No has creado misiones todavía. Diseña actividades emocionantes para que tus exploradores aprendan divirtiéndose.
-                    <?php endif; ?>
-                </p>
-                <a href="crear_actividad.php" class="btn-create-new">
-                    <i class="fas fa-plus-circle"></i> CREAR NUEVA MISIÓN
-                </a>
             </div>
-        <?php endif; ?>
-    </div>
+        <?php endforeach; ?>
+        
+    <?php else: ?>
+        <div class="no-activities animate__animated animate__fadeIn">
+            <div class="no-activities-icon">
+                <i class="fas fa-tasks"></i>
+            </div>
+            <h3><?php echo $curso_filtro > 0 ? '¡No hay misiones en este curso!' : '¡Comienza la Aventura! 🚀'; ?></h3>
+            <p>
+                <?php if($curso_filtro > 0): ?>
+                    Este curso aún no tiene misiones. ¡Crea la primera para tus exploradores!
+                <?php else: ?>
+                    No has creado misiones todavía. Diseña actividades emocionantes para que tus exploradores aprendan divirtiéndose.
+                <?php endif; ?>
+            </p>
+            <a href="crear_actividad.php" class="btn-create-new">
+                <i class="fas fa-plus-circle"></i> CREAR NUEVA MISIÓN
+            </a>
+        </div>
+    <?php endif; ?>
+</div>
     
     <!-- Modal para Editar Actividad -->
     <div class="modal fade" id="editModal" tabindex="-1" aria-hidden="true">
@@ -1171,17 +1213,14 @@ $res_grouped = mysqli_query($conn, $sql_grouped);
                             </label>
                             <select name="id_curso" id="editCurso" class="form-select-custom" required>
                                 <option value="">Selecciona un curso</option>
-                                <?php 
-                                mysqli_data_seek($res_cursos, 0);
-                                while($c = mysqli_fetch_assoc($res_cursos)): 
+                                <?php foreach($cursos as $c): 
                                     $selected = (isset($activity_data['id_curso']) && $activity_data['id_curso'] == $c['id']) ? 'selected' : '';
                                 ?>
                                     <option value="<?php echo $c['id']; ?>" <?php echo $selected; ?>>
                                         <?php echo htmlspecialchars($c['nombre']); ?>
                                     </option>
-                                <?php endwhile; ?>
+                                <?php endforeach; ?>
                             </select>
-                        </div>
                         
                         <div class="mb-4">
                             <label class="form-label-custom">

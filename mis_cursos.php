@@ -51,6 +51,27 @@ try {
     $total_actividades_recientes = 0;
 }
 
+// =============================================
+// OBTENER ACTIVIDADES PARA EL SIDEBAR
+// =============================================
+$actividades_data = [];
+try {
+    $stmt_actividades = $conn->pdo->prepare("
+        SELECT a.id, a.titulo, a.fecha_limite, 
+               e.id as entrega_id, e.estado as estado_entrega
+        FROM actividades a
+        JOIN cursos c ON a.id_curso = c.id
+        JOIN inscripciones i ON c.id = i.id_curso
+        LEFT JOIN entregas e ON a.id = e.id_actividad AND e.id_alumno = :alumno_id
+        WHERE i.id_alumno = :alumno_id AND i.estado = 'activo'
+        ORDER BY a.fecha_limite ASC
+    ");
+    $stmt_actividades->execute([':alumno_id' => $alumno_id]);
+    $actividades_data = $stmt_actividades->fetchAll(PDO::FETCH_ASSOC);
+} catch(PDOException $e) {
+    $actividades_data = [];
+}
+
 // Calcular estadísticas
 $progreso_promedio = 0;
 $total_actividades_completadas = 0;
@@ -1000,17 +1021,20 @@ function adjustBrightness($hex, $steps) {
     <div class="floating-element" style="bottom: 15%; left: 5%; width: 80px; height: 80px; background: linear-gradient(135deg, rgb(240, 174, 42), rgba(240, 174, 42, 0.1)); animation-delay: 1s;"></div>
     <div class="floating-element" style="top: 30%; left: 10%; width: 60px; height: 60px; background: linear-gradient(135deg, rgb(130, 191, 70), rgba(131, 191, 70, 0.1)); animation-delay: 2s;"></div>
     
+<!-- Sidebar infantil -->
     <div class="sidebar-kid">
+        <!-- Contenido con scroll -->
         <div class="sidebar-content">
             <div class="sidebar-brand">
                 <div class="logo-container">
-                    <div class="logo-main">D&F</div>
-                    <div class="logo-sub">mindspace</div>
-                    <div class="tagline">
-                        <span>EXPLORA</span> • <span>CREA</span> • <span>APRENDE</span>
-                    </div>
+                <div class="logo-main">D&F</div>
+                <div class="logo-sub">mindspace</div>
+                <div class="tagline">
+                    <span>EXPLORA</span> • <span>CREA</span> • <span>APRENDE</span>
                 </div>
+            </div>
                 
+                <!-- Avatar del niño -->
                 <div class="kid-avatar" id="kidAvatar">
                     <span class="avatar-emoji"><?php echo $avatar_emoji; ?></span>
                     <div class="avatar-status"></div>
@@ -1020,8 +1044,15 @@ function adjustBrightness($hex, $steps) {
                 <span class="kid-level">
                     <i class="fas fa-star me-1"></i>Nivel <?php echo $avatares[$avatar_key]['nivel']; ?>
                 </span>
+                
+                <!-- Puntos -->
+                <!-- <div class="points-container" style="text-align: center; padding: 15px; background: linear-gradient(135deg, rgba(255, 107, 139, 0.1), rgba(255, 107, 139, 0.05)); border-radius: 15px; margin: 15px;">
+                    <div class="points-value" style="font-size: 2rem; font-family: 'Fredoka One', cursive; color: var(--danger); margin: 5px 0;"><?php echo $puntos_alumno; ?></div>
+                    <div class="points-label" style="color: #666; font-size: 0.9rem;">Puntos de Aventura</div>
+                </div> -->
             </div>
             
+            <!-- Navegación -->
             <ul class="nav flex-column mt-3">
                 <li class="nav-item">
                     <a href="dashboard_alumno.php" class="nav-link">
@@ -1033,9 +1064,7 @@ function adjustBrightness($hex, $steps) {
                     <a href="mis_cursos.php" class="nav-link active">
                         <i class="fas fa-compass"></i>
                         <span>Mis Aventuras</span>
-                        <?php if($total_cursos > 0): ?>
-                            <span class="badge-notification ms-auto"><?php echo $total_cursos; ?></span>
-                        <?php endif; ?>
+                        <!-- NOTIFICACIÓN ELIMINADA - No debe mostrar número -->
                     </a>
                 </li>
                 <li class="nav-item">
@@ -1048,8 +1077,30 @@ function adjustBrightness($hex, $steps) {
                     <a href="mis_actividades.php" class="nav-link">
                         <i class="fas fa-tasks"></i>
                         <span>Mis Misiones</span>
-                        <?php if($total_actividades_recientes > 0): ?>
-                            <span class="badge-notification ms-auto"><?php echo $total_actividades_recientes; ?></span>
+                        <?php 
+                        // Calcular misiones PENDIENTES para el ALUMNO
+                        // Pendiente = NO ha entregado Y NO está vencida
+                        $misiones_pendientes = 0;
+                        foreach($actividades_data as $act) {
+                            // Verificar si está vencida
+                            $fecha_limite = strtotime($act['fecha_limite']);
+                            $hoy = time();
+                            $tiene_fecha_limite = $act['fecha_limite'] && !empty($act['fecha_limite']);
+                            
+                            // Está vencida si: tiene fecha, la fecha pasó, y NO ha entregado
+                            $vencida = $tiene_fecha_limite && $hoy > $fecha_limite && !$act['entrega_id'];
+                            
+                            // Para el alumno, una misión está PENDIENTE solo si:
+                            // NO ha entregado Y NO está vencida
+                            $es_pendiente = (!$act['entrega_id'] && !$vencida);
+                            
+                            if ($es_pendiente) {
+                                $misiones_pendientes++;
+                            }
+                        }
+                        ?>
+                        <?php if($misiones_pendientes > 0): ?>
+                            <span class="badge-notification ms-auto"><?php echo $misiones_pendientes; ?></span>
                         <?php endif; ?>
                     </a>
                 </li>
@@ -1062,6 +1113,7 @@ function adjustBrightness($hex, $steps) {
             </ul>
         </div>
         
+        <!-- Footer fijo en la parte inferior -->
         <div class="sidebar-footer">
             <a href="logout.php" class="nav-link logout-link">
                 <i class="fas fa-sign-out-alt"></i>

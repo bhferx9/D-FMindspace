@@ -568,16 +568,44 @@ footer {
     background: white;
     box-shadow: 0 0 0 4px rgba(44,186,236,.1);
 }
-.input-wrap input:focus + i,
-.input-wrap i { pointer-events: none; }
-.input-wrap:focus-within i { color: var(--primary); }
+.input-wrap > i { pointer-events: none; }
 
 .input-wrap .toggle-pass {
-    position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
-    color: #bbb; cursor: pointer; font-size: .9rem;
-    transition: color .2s; pointer-events: all;
+    pointer-events: all !important;
+    cursor: pointer;
+    z-index: 10;
+    position: absolute;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+.input-wrap .toggle-pass i {
+    pointer-events: none; /* el click lo recibe el span, no el ícono */
 }
 .input-wrap .toggle-pass:hover { color: var(--primary); }
+
+.btn-toggle-pass {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 10px;
+    color: #bbb;
+    font-size: .95rem;
+    cursor: pointer;
+    z-index: 10;
+    transition: color .2s, background .2s;
+    pointer-events: auto;
+    outline: none;
+}
+.btn-toggle-pass:hover { color: var(--primary); background: rgba(44,186,236,.08); }
 
 /* Validation states */
 .input-wrap input.is-valid   { border-color: var(--accent); background: rgba(131,191,70,.04); }
@@ -661,6 +689,27 @@ footer {
 /* Divider */
 .form-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 
+/* Mobile menu modal */
+.mobile-menu-modal .modal-box { max-width: 320px; }
+.mobile-menu-items { display: flex; flex-direction: column; gap: 16px; padding: 8px 0; }
+.mobile-menu-items a { 
+    text-decoration: none; color: var(--text-dark); font-weight: 600; 
+    padding: 12px; border-radius: 12px; transition: all .2s;
+    display: flex; align-items: center; gap: 12px;
+}
+.mobile-menu-items a:hover { background: rgba(44,186,236,.08); color: var(--primary); }
+.mobile-menu-items .mobile-cta { 
+    display: flex; gap: 12px; margin-top: 16px; padding-top: 16px; 
+    border-top: 2px solid #eee;
+}
+.mobile-menu-items button { flex: 1; }
+
+/* Error modal */
+.error-modal .modal-box { max-width: 400px; }
+.error-modal .modal-icon { background: rgba(255,87,87,.2); border-color: rgba(255,87,87,.3); }
+.error-modal h3 { color: var(--danger); }
+.error-modal .btn-modal-submit { background: linear-gradient(90deg, var(--danger), #cc4444); box-shadow: 0 8px 24px rgba(255,87,87,.35); }
+
 /* ============================================================
    SCROLL ANIMATIONS
    ============================================================ */
@@ -723,7 +772,7 @@ footer {
         <button class="btn-solid" onclick="openModal('register')">Únete gratis</button>
     </div>
 
-    <div class="hamburger" id="hamburger" onclick="toggleMobileMenu()">
+    <div class="hamburger" id="hamburger" onclick="openMobileMenu()">
         <span></span><span></span><span></span>
     </div>
 </nav>
@@ -1012,7 +1061,6 @@ footer {
         </div>
         <div class="modal-body">
             <form id="form-login" action="auth_login.php" method="POST" novalidate>
-
                 <div class="form-group">
                     <label for="login-email">Correo electrónico</label>
                     <div class="input-wrap">
@@ -1027,9 +1075,9 @@ footer {
                     <div class="input-wrap">
                         <i class="fas fa-lock"></i>
                         <input type="password" id="login-password" name="password" placeholder="••••••••" autocomplete="current-password">
-                        <span class="toggle-pass" onclick="togglePass('login-password', this)" title="Mostrar/ocultar contraseña">
+                        <button type="button" class="btn-toggle-pass" data-target="login-password" aria-label="Mostrar u ocultar contraseña">
                             <i class="fas fa-eye"></i>
-                        </span>
+                        </button>
                     </div>
                     <div class="field-feedback" id="fb-login-password"></div>
                 </div>
@@ -1058,9 +1106,7 @@ footer {
             <p>Crea tu cuenta y comienza la aventura educativa</p>
         </div>
         <div class="modal-body">
-            <form id="form-register" action="procesar_registro.php" method="POST" novalidate>
-
-                <!-- Nombre + Apellido -->
+            <form id="form-register" action="#" method="POST" novalidate>
                 <div class="form-row-2">
                     <div class="form-group">
                         <label for="reg-nombre">Nombre completo</label>
@@ -1080,7 +1126,6 @@ footer {
                     </div>
                 </div>
 
-                <!-- Email + Teléfono -->
                 <div class="form-row-2">
                     <div class="form-group">
                         <label for="reg-email">Correo electrónico</label>
@@ -1100,7 +1145,6 @@ footer {
                     </div>
                 </div>
 
-                <!-- Contraseña -->
                 <div class="form-group">
                     <label for="reg-password">Contraseña</label>
                     <div class="input-wrap">
@@ -1115,7 +1159,6 @@ footer {
                     <div class="field-feedback" id="fb-reg-password"></div>
                 </div>
 
-                <!-- Rol -->
                 <div class="form-group">
                     <label>¿Quién eres en Mindspace?</label>
                     <input type="hidden" name="tipo" id="reg-tipo" value="alumno">
@@ -1135,7 +1178,6 @@ footer {
                     </div>
                 </div>
 
-                <!-- Parent section -->
                 <div class="parent-section" id="parent-section">
                     <h6><i class="fas fa-link"></i> Vincular con tu hijo en Mindspace</h6>
                     <p style="font-size:.8rem;color:#a0845a;margin-bottom:14px;">Ingresa las credenciales de tu hijo para vincular las cuentas de forma segura.</p>
@@ -1171,9 +1213,71 @@ footer {
 </div>
 
 <!-- ============================================================
+     MOBILE MENU MODAL
+     ============================================================ -->
+<div class="modal-overlay mobile-menu-modal" id="modal-mobile-menu">
+    <div class="modal-box">
+        <div class="modal-header-strip">
+            <button class="modal-close" onclick="closeModal('mobile-menu')" aria-label="Cerrar"><i class="fas fa-times"></i></button>
+            <div class="modal-icon"><i class="fas fa-bars"></i></div>
+            <h3>Menú</h3>
+            <p>Explora D&F Mindspace</p>
+        </div>
+        <div class="modal-body">
+            <div class="mobile-menu-items">
+                <a href="#nosotros" onclick="closeModal('mobile-menu'); document.getElementById('nosotros').scrollIntoView({behavior:'smooth'})">
+                    <i class="fas fa-heart" style="color:var(--primary);"></i> Quiénes somos
+                </a>
+                <a href="#pilares" onclick="closeModal('mobile-menu'); document.getElementById('pilares').scrollIntoView({behavior:'smooth'})">
+                    <i class="fas fa-star" style="color:var(--secondary);"></i> Metodología
+                </a>
+                <a href="#roles" onclick="closeModal('mobile-menu'); document.getElementById('roles').scrollIntoView({behavior:'smooth'})">
+                    <i class="fas fa-users" style="color:var(--accent);"></i> ¿Para quién?
+                </a>
+                <div class="mobile-cta">
+                    <button class="btn-ghost" style="border-color:var(--primary); color:var(--primary);" onclick="closeModal('mobile-menu'); openModal('login')">
+                        <i class="fas fa-sign-in-alt"></i> Iniciar sesión
+                    </button>
+                    <button class="btn-solid" onclick="closeModal('mobile-menu'); openModal('register')">
+                        <i class="fas fa-user-plus"></i> Registrarse
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================
+     ERROR MODAL
+     ============================================================ -->
+<div class="modal-overlay error-modal" id="modal-error">
+    <div class="modal-box">
+        <div class="modal-header-strip">
+            <button class="modal-close" onclick="closeModal('error')" aria-label="Cerrar"><i class="fas fa-times"></i></button>
+            <div class="modal-icon"><i class="fas fa-exclamation-triangle"></i></div>
+            <h3 id="error-title">Error</h3>
+            <p id="error-message">Ha ocurrido un error</p>
+        </div>
+        <div class="modal-body">
+            <button class="btn-modal-submit" onclick="closeModal('error')">
+                <i class="fas fa-check"></i> Entendido
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================
      JAVASCRIPT
      ============================================================ -->
 <script>
+/* ---- SHOW ERROR MODAL ---- */
+function showError(message, title = "Error") {
+    document.getElementById('error-title').textContent = title;
+    document.getElementById('error-message').textContent = message;
+    document.getElementById('modal-error').classList.add('open');
+    document.body.style.overflow = 'hidden';
+}
+
 /* ---- NAVBAR SCROLL ---- */
 window.addEventListener('scroll', () => {
     document.getElementById('navbar').classList.toggle('scrolled', window.scrollY > 60);
@@ -1220,18 +1324,46 @@ document.addEventListener('keydown', e => {
     }
 });
 
-/* ---- TOGGLE PASSWORD ---- */
-function togglePass(id, icon) {
-    const inp = document.getElementById(id);
-    const i = icon.querySelector('i');
-    if (inp.type === 'password') {
-        inp.type = 'text';
-        i.className = 'fas fa-eye-slash';
+/* ---- MOBILE MENU ---- */
+function openMobileMenu() {
+    openModal('mobile-menu');
+}
+
+/* ---- TOGGLE PASSWORD - CORREGIDO ---- */
+function togglePass(inputId, btnElement) {
+    const input = document.getElementById(inputId);
+    const icon = btnElement.querySelector('i');  // ✅ btnElement es el span con class="toggle-pass"
+    
+    if (!input || !icon) return;
+    
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.classList.remove('fa-eye');
+        icon.classList.add('fa-eye-slash');
     } else {
-        inp.type = 'password';
-        i.className = 'fas fa-eye';
+        input.type = 'password';
+        icon.classList.remove('fa-eye-slash');
+        icon.classList.add('fa-eye');
     }
 }
+/* ============================================================
+   TOGGLE OJO - Con addEventListener
+   ============================================================ */
+document.querySelectorAll('.btn-toggle-pass').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        var input = document.getElementById(this.getAttribute('data-target'));
+        var icon  = this.querySelector('i');
+        if (!input || !icon) return;
+
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.classList.replace('fa-eye', 'fa-eye-slash');
+        } else {
+            input.type = 'password';
+            icon.classList.replace('fa-eye-slash', 'fa-eye');
+        }
+    });
+});
 
 /* ---- ROLE SELECTOR ---- */
 function selectRole(el) {
@@ -1256,31 +1388,34 @@ function selectRole(el) {
 }
 
 /* ---- PASSWORD STRENGTH ---- */
-document.getElementById('reg-password').addEventListener('input', function() {
-    const val = this.value;
-    const fill  = document.getElementById('pass-fill');
-    const label = document.getElementById('pass-label');
+const passInput = document.getElementById('reg-password');
+if (passInput) {
+    passInput.addEventListener('input', function() {
+        const val = this.value;
+        const fill  = document.getElementById('pass-fill');
+        const label = document.getElementById('pass-label');
 
-    let score = 0;
-    if (val.length >= 8)  score++;
-    if (/[A-Z]/.test(val)) score++;
-    if (/[0-9]/.test(val)) score++;
-    if (/[^A-Za-z0-9]/.test(val)) score++;
+        let score = 0;
+        if (val.length >= 8)  score++;
+        if (/[A-Z]/.test(val)) score++;
+        if (/[0-9]/.test(val)) score++;
+        if (/[^A-Za-z0-9]/.test(val)) score++;
 
-    const levels = [
-        { pct: '0%',   color: '#eee',            text: 'Escribe tu contraseña' },
-        { pct: '25%',  color: 'var(--danger)',    text: 'Muy débil' },
-        { pct: '50%',  color: 'var(--secondary)', text: 'Regular' },
-        { pct: '75%',  color: 'var(--primary)',   text: 'Buena' },
-        { pct: '100%', color: 'var(--accent)',     text: 'Muy fuerte 💪' },
-    ];
+        const levels = [
+            { pct: '0%',   color: '#eee',            text: 'Escribe tu contraseña' },
+            { pct: '25%',  color: 'var(--danger)',    text: 'Muy débil' },
+            { pct: '50%',  color: 'var(--secondary)', text: 'Regular' },
+            { pct: '75%',  color: 'var(--primary)',   text: 'Buena' },
+            { pct: '100%', color: 'var(--accent)',     text: 'Muy fuerte 💪' },
+        ];
 
-    const lvl = val.length === 0 ? levels[0] : levels[score] || levels[score - 1];
-    fill.style.width    = val.length === 0 ? '0%' : lvl.pct;
-    fill.style.background = lvl.color;
-    label.textContent   = lvl.text;
-    label.style.color   = val.length === 0 ? '#aaa' : lvl.color;
-});
+        const lvl = val.length === 0 ? levels[0] : levels[score] || levels[score - 1];
+        fill.style.width    = val.length === 0 ? '0%' : lvl.pct;
+        fill.style.background = lvl.color;
+        label.textContent   = lvl.text;
+        label.style.color   = val.length === 0 ? '#aaa' : lvl.color;
+    });
+}
 
 /* ============================================================
    VALIDACIÓN EN TIEMPO REAL
@@ -1305,45 +1440,57 @@ function markInput(id, valid) {
 const loginEmail = document.getElementById('login-email');
 const loginPass  = document.getElementById('login-password');
 
-loginEmail.addEventListener('blur', function() {
-    const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.value.trim());
-    if (!this.value.trim()) {
-        markInput('login-email', false);
-        setFeedback('fb-login-email', 'El correo es obligatorio', 'err');
-    } else if (!ok) {
-        markInput('login-email', false);
-        setFeedback('fb-login-email', 'Ingresa un correo válido', 'err');
-    } else {
-        markInput('login-email', true);
-        setFeedback('fb-login-email', 'Correo válido', 'ok');
-    }
-});
+if (loginEmail) {
+    loginEmail.addEventListener('blur', function() {
+        const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.value.trim());
+        if (!this.value.trim()) {
+            markInput('login-email', false);
+            setFeedback('fb-login-email', 'El correo es obligatorio', 'err');
+        } else if (!ok) {
+            markInput('login-email', false);
+            setFeedback('fb-login-email', 'Ingresa un correo válido', 'err');
+        } else {
+            markInput('login-email', true);
+            setFeedback('fb-login-email', 'Correo válido', 'ok');
+        }
+    });
+}
 
-loginPass.addEventListener('blur', function() {
-    if (!this.value) {
-        markInput('login-password', false);
-        setFeedback('fb-login-password', 'La contraseña es obligatoria', 'err');
-    } else {
-        markInput('login-password', true);
-        setFeedback('fb-login-password', '', '');
-    }
-});
+if (loginPass) {
+    loginPass.addEventListener('blur', function() {
+        if (!this.value) {
+            markInput('login-password', false);
+            setFeedback('fb-login-password', 'La contraseña es obligatoria', 'err');
+        } else {
+            markInput('login-password', true);
+            setFeedback('fb-login-password', '', '');
+        }
+    });
+}
 
-document.getElementById('form-login').addEventListener('submit', function(e) {
+document.getElementById('form-login')?.addEventListener('submit', function(e) {
     let valid = true;
+    let errorMsg = '';
 
     if (!loginEmail.value.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginEmail.value.trim())) {
         markInput('login-email', false);
         setFeedback('fb-login-email', 'Ingresa un correo válido', 'err');
         valid = false;
+        errorMsg = 'Correo electrónico inválido';
     }
     if (!loginPass.value) {
         markInput('login-password', false);
         setFeedback('fb-login-password', 'La contraseña es obligatoria', 'err');
         valid = false;
+        errorMsg = errorMsg || 'La contraseña es obligatoria';
     }
 
-    if (!valid) e.preventDefault();
+    // Solo prevenir si hay error
+    if (!valid) {
+        e.preventDefault();
+        showError(errorMsg, 'Error de validación');
+    }
+    // Si es válido, NO se hace nada y el formulario se envía solo
 });
 
 /* --- REGISTER validations --- */
@@ -1366,7 +1513,6 @@ const regMessages = {
 Object.entries(regFields).forEach(([id, cfg]) => {
     const el = document.getElementById(id);
     if (!el) return;
-    const fbId = 'fb-' + id.replace('reg-', 'reg-');
 
     el.addEventListener('input', function() {
         const ok = cfg.validate(this.value);
@@ -1388,22 +1534,30 @@ Object.entries(regFields).forEach(([id, cfg]) => {
 });
 
 /* Parent fields */
-document.getElementById('hijo-email').addEventListener('blur', function() {
-    if (document.getElementById('reg-tipo').value !== 'padre') return;
-    const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.value.trim());
-    markInput('hijo-email', ok || !this.value ? (this.value ? ok : false) : false);
-    setFeedback('fb-hijo-email', this.value ? (ok ? 'Correo válido' : 'Correo inválido') : 'Obligatorio para padres', this.value && ok ? 'ok' : 'err');
-});
+const hijoEmail = document.getElementById('hijo-email');
+const hijoPass = document.getElementById('hijo-pass');
 
-document.getElementById('hijo-pass').addEventListener('blur', function() {
-    if (document.getElementById('reg-tipo').value !== 'padre') return;
-    const ok = this.value.length >= 1;
-    markInput('hijo-pass', ok);
-    setFeedback('fb-hijo-pass', ok ? '' : 'Ingresa la contraseña del hijo', ok ? '' : 'err');
-});
+if (hijoEmail) {
+    hijoEmail.addEventListener('blur', function() {
+        if (document.getElementById('reg-tipo').value !== 'padre') return;
+        const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.value.trim());
+        markInput('hijo-email', ok || !this.value ? (this.value ? ok : false) : false);
+        setFeedback('fb-hijo-email', this.value ? (ok ? 'Correo válido' : 'Correo inválido') : 'Obligatorio para padres', this.value && ok ? 'ok' : 'err');
+    });
+}
 
-document.getElementById('form-register').addEventListener('submit', function(e) {
+if (hijoPass) {
+    hijoPass.addEventListener('blur', function() {
+        if (document.getElementById('reg-tipo').value !== 'padre') return;
+        const ok = this.value.length >= 1;
+        markInput('hijo-pass', ok);
+        setFeedback('fb-hijo-pass', ok ? '' : 'Ingresa la contraseña del hijo', ok ? '' : 'err');
+    });
+}
+
+document.getElementById('form-register')?.addEventListener('submit', function(e) {
     let valid = true;
+    let errorMsg = '';
 
     Object.entries(regFields).forEach(([id, cfg]) => {
         const el = document.getElementById(id);
@@ -1414,32 +1568,32 @@ document.getElementById('form-register').addEventListener('submit', function(e) 
             markInput(id, false);
             setFeedback('fb-' + id, regMessages[id].err, 'err');
             valid = false;
+            errorMsg = regMessages[id].err;
         }
     });
 
     if (document.getElementById('reg-tipo').value === 'padre') {
-        const hijoE = document.getElementById('hijo-email');
-        const hijoP = document.getElementById('hijo-pass');
-        if (!hijoE.value || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(hijoE.value)) {
+        if (!hijoEmail.value || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(hijoEmail.value)) {
             markInput('hijo-email', false);
             setFeedback('fb-hijo-email', 'Correo del hijo obligatorio', 'err');
             valid = false;
+            errorMsg = errorMsg || 'Debes vincular la cuenta de tu hijo';
         }
-        if (!hijoP.value) {
+        if (!hijoPass.value) {
             markInput('hijo-pass', false);
             setFeedback('fb-hijo-pass', 'Contraseña del hijo obligatoria', 'err');
             valid = false;
+            errorMsg = errorMsg || 'Debes ingresar la contraseña del hijo';
         }
     }
 
-    if (!valid) e.preventDefault();
+    // Solo prevenir si hay error
+    if (!valid) {
+        e.preventDefault();
+        showError(errorMsg, 'Error en el registro');
+    }
+    // Si es válido, NO haces nada, el formulario se envía solo
 });
-
-/* ---- MOBILE MENU ---- */
-function toggleMobileMenu() {
-    // Simple: open register on mobile tap
-    openModal('register');
-}
 </script>
 </body>
 </html>

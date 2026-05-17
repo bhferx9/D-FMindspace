@@ -2,54 +2,54 @@
 include 'php/config.php';
 session_start();
 
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    // No necesitas mysqli_real_escape_string con consultas preparadas
-    $email = $_POST['email'];
-    $password = $_POST['password'];
+header('Content-Type: application/json');
 
-    try {
-        // Consulta preparada (segura contra inyección SQL)
-        $sql = "SELECT * FROM usuarios WHERE email = ? AND activo = TRUE";
-        $stmt = $conn->pdo->prepare($sql);
-        $stmt->execute([$email]);
-        
-        // Verificar si encontró el usuario
-        if ($stmt->rowCount() > 0) {
-            $user = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            // Verificar contraseña
-            if (password_verify($password, $user['password'])) {
-                // Guardar datos en sesión
-                $_SESSION['user_id'] = $user['id'];
-                $_SESSION['nombre'] = $user['nombre'];
-                $_SESSION['tipo'] = $user['tipo'];
+if ($_SERVER["REQUEST_METHOD"] != "POST") {
+    echo json_encode(['success' => false, 'message' => 'Método no permitido']);
+    exit();
+}
 
-                // Redirección según el tipo de usuario
-                switch ($user['tipo']) {
-                    case 'alumno':
-                        header("Location: dashboard_alumno.php");
-                        break;
-                    case 'tutor':
-                        header("Location: dashboard_tutor.php");
-                        break;
-                    case 'padre':
-                        header("Location: dashboard_padre.php");
-                        break;
-                    case 'admin':
-                        header("Location: dashboard_admin.php");
-                        break;
-                    default:
-                        header("Location: index.php");
-                }
-                exit();
-            } else {
-                echo "<script>alert('Contraseña incorrecta'); window.location='index.php';</script>";
-            }
-        } else {
-            echo "<script>alert('El correo no está registrado o la cuenta no está activa'); window.location='index.php';</script>";
-        }
-    } catch(PDOException $e) {
-        echo "<script>alert('Error en la base de datos: " . addslashes($e->getMessage()) . "'); window.location='index.php';</script>";
+$email = $_POST['email'] ?? '';
+$password = $_POST['password'] ?? '';
+
+if (empty($email) || empty($password)) {
+    echo json_encode(['success' => false, 'message' => 'Correo y contraseña son obligatorios']);
+    exit();
+}
+
+try {
+    $sql = "SELECT * FROM usuarios WHERE email = ? AND activo = TRUE";
+    $stmt = $conn->pdo->prepare($sql);
+    $stmt->execute([$email]);
+    
+    if ($stmt->rowCount() == 0) {
+        echo json_encode(['success' => false, 'message' => 'El correo no está registrado o la cuenta no está activa']);
+        exit();
     }
+    
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!password_verify($password, $user['password'])) {
+        echo json_encode(['success' => false, 'message' => 'Contraseña incorrecta']);
+        exit();
+    }
+    
+    $_SESSION['user_id'] = $user['id'];
+    $_SESSION['nombre'] = $user['nombre'];
+    $_SESSION['tipo'] = $user['tipo'];
+    
+    // Redirección según tipo
+    $redirect = match($user['tipo']) {
+        'alumno' => 'dashboard_alumno.php',
+        'tutor' => 'dashboard_tutor.php',
+        'padre' => 'dashboard_padre.php',
+        'admin' => 'dashboard_admin.php',
+        default => 'index.php'
+    };
+    
+    echo json_encode(['success' => true, 'redirect' => $redirect]);
+    
+} catch(PDOException $e) {
+    echo json_encode(['success' => false, 'message' => 'Error en la base de datos: ' . $e->getMessage()]);
 }
 ?>

@@ -40,6 +40,25 @@ $query_actividades = "SELECT a.titulo, e.fecha_entrega, e.estado, ev.calificacio
                       ORDER BY e.fecha_entrega DESC LIMIT 4";
 $res_actividades = mysqli_query($conn, $query_actividades);
 
+
+$actividades_data = [];
+try {
+    $stmt_actividades = $conn->pdo->prepare("
+        SELECT a.id, a.titulo, a.fecha_limite, 
+               e.id as entrega_id, e.estado as estado_entrega
+        FROM actividades a
+        JOIN cursos c ON a.id_curso = c.id
+        JOIN inscripciones i ON c.id = i.id_curso
+        LEFT JOIN entregas e ON a.id = e.id_actividad AND e.id_alumno = :alumno_id
+        WHERE i.id_alumno = :alumno_id AND i.estado = 'activo'
+        ORDER BY a.fecha_limite ASC
+    ");
+    $stmt_actividades->execute([':alumno_id' => $alumno_id]);
+    $actividades_data = $stmt_actividades->fetchAll(PDO::FETCH_ASSOC);
+} catch(PDOException $e) {
+    $actividades_data = [];
+}
+
 // CORREGIDO: Verificar si la tabla alumnos existe, sino usar tabla usuarios
 // Primero verificamos si existe la tabla alumnos
 
@@ -1037,9 +1056,7 @@ if (!$res_cursos) {
                     <a href="mis_cursos.php" class="nav-link">
                         <i class="fas fa-compass"></i>
                         <span>Mis Aventuras</span>
-                        <?php if($num_cursos > 0): ?>
-                            <span class="badge-notification ms-auto"><?php echo $num_cursos; ?></span>
-                        <?php endif; ?>
+                        <!-- NOTIFICACIÓN ELIMINADA - No debe mostrar número -->
                     </a>
                 </li>
                 <li class="nav-item">
@@ -1052,12 +1069,33 @@ if (!$res_cursos) {
                     <a href="mis_actividades.php" class="nav-link">
                         <i class="fas fa-tasks"></i>
                         <span>Mis Misiones</span>
-                        <?php if(mysqli_num_rows($res_actividades) > 0): ?>
-                            <span class="badge-notification ms-auto"><?php echo mysqli_num_rows($res_actividades); ?></span>
+                        <?php 
+                        // Calcular misiones PENDIENTES para el ALUMNO
+                        // Pendiente = NO ha entregado Y NO está vencida
+                        $misiones_pendientes = 0;
+                        foreach($actividades_data as $act) {
+                            // Verificar si está vencida
+                            $fecha_limite = strtotime($act['fecha_limite']);
+                            $hoy = time();
+                            $tiene_fecha_limite = $act['fecha_limite'] && !empty($act['fecha_limite']);
+                            
+                            // Está vencida si: tiene fecha, la fecha pasó, y NO ha entregado
+                            $vencida = $tiene_fecha_limite && $hoy > $fecha_limite && !$act['entrega_id'];
+                            
+                            // Para el alumno, una misión está PENDIENTE solo si:
+                            // NO ha entregado Y NO está vencida
+                            $es_pendiente = (!$act['entrega_id'] && !$vencida);
+                            
+                            if ($es_pendiente) {
+                                $misiones_pendientes++;
+                            }
+                        }
+                        ?>
+                        <?php if($misiones_pendientes > 0): ?>
+                            <span class="badge-notification ms-auto"><?php echo $misiones_pendientes; ?></span>
                         <?php endif; ?>
                     </a>
                 </li>
-            
                 <li class="nav-item">
                     <a href="avatar_shop.php" class="nav-link">
                         <i class="fas fa-user-astronaut"></i>
@@ -1075,7 +1113,6 @@ if (!$res_cursos) {
             </a>
         </div>
     </div>
-    
     <!-- Contenido principal -->
     <div class="main-content">
         
@@ -1097,10 +1134,6 @@ if (!$res_cursos) {
                         <div class="banner-stat">
                             <i class="fas fa-coins"></i>
                             <span><?php echo $puntos_alumno; ?> Puntos</span>
-                        </div>
-                        <div class="banner-stat">
-                            <i class="fas fa-trophy"></i>
-                            <span>5 Logros</span>
                         </div>
                     </div>
                 </div>

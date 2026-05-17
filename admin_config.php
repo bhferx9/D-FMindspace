@@ -261,7 +261,6 @@ try {
     $alertas_pendientes = $row['n'] ?? 0;
 } catch(PDOException $e) {}
 ?>
-// El resto del HTML permanece igual
 <!DOCTYPE html>
 <html lang="es">
 <head>

@@ -50,11 +50,11 @@ if ($curso_filtro) {
 $query_actividades .= " ORDER BY a.fecha_limite ASC, c.nombre ASC";
 $res_actividades = mysqli_query($conn, $query_actividades);
 
-// Contar actividades por estado
+// Contar actividades por estado (con los criterios correctos)
 $total_actividades = 0;
-$pendientes = 0;
-$entregadas = 0;
-$calificadas = 0;
+$pendientes = 0;      // Sin entregar + NO vencidas
+$entregadas = 0;      // Con entrega (sin importar si está calificada o no)
+$calificadas = 0;     // Con calificación
 $calificacion_promedio = 0;
 $total_calificacion = 0;
 $cont_calificadas = 0;
@@ -65,20 +65,29 @@ if (mysqli_num_rows($res_actividades) > 0) {
     mysqli_data_seek($res_actividades, 0);
     while ($act = mysqli_fetch_assoc($res_actividades)) {
         $total_actividades++;
-        $actividades_data[] = $act; // Almacenar para usar en el modal
+        $actividades_data[] = $act;
         
-        if (!$act['entrega_id']) {
+        // Verificar si está vencida
+        $fecha_limite = strtotime($act['fecha_limite']);
+        $hoy = time();
+        $tiene_fecha_limite = $act['fecha_limite'] && !empty($act['fecha_limite']);
+        $vencida = $tiene_fecha_limite && $hoy > $fecha_limite && !$act['entrega_id'];
+        
+        // Contar PENDIENTES: NO ha entregado Y NO está vencida
+        if (!$act['entrega_id'] && !$vencida) {
             $pendientes++;
-        } elseif ($act['estado_entrega'] == 'pendiente') {
-            $pendientes++;
-        } elseif ($act['estado_entrega'] == 'entregado') {
+        }
+        
+        // Contar ENTREGADAS: tiene entrega (sin importar estado de calificación)
+        if ($act['entrega_id']) {
             $entregadas++;
-        } elseif ($act['estado_entrega'] == 'calificado') {
+        }
+        
+        // Contar CALIFICADAS: tiene calificación
+        if ($act['calificacion']) {
             $calificadas++;
-            if ($act['calificacion']) {
-                $total_calificacion += $act['calificacion'];
-                $cont_calificadas++;
-            }
+            $total_calificacion += $act['calificacion'];
+            $cont_calificadas++;
         }
     }
     
@@ -98,8 +107,7 @@ $query_cursos = "SELECT DISTINCT c.id, c.nombre
                  ORDER BY c.nombre";
 $res_cursos = mysqli_query($conn, $query_cursos);
 
-// Obtener avatar del alumno - CORREGIDO PARA POSTGRESQL
-// Obtener avatar del alumno - ARREGLO COMPLETO
+// Obtener avatar del alumno
 $avatares = [
     'panda' => ['emoji' => '🐼', 'color' => '#3A506B', 'nivel' => 1],
     'zorro' => ['emoji' => '🦊', 'color' => '#E67E22', 'nivel' => 1],
@@ -137,7 +145,7 @@ $avatares = [
     'zeus' => ['emoji' => '⚡', 'color' => '#FFD700', 'nivel' => 7]
 ];
 
-// Consulta directa del avatar (sin SHOW COLUMNS)
+// Consulta directa del avatar
 $query_avatar = "SELECT COALESCE(avatar, 'panda') as avatar FROM usuarios WHERE id = '$alumno_id'";
 $res_avatar = mysqli_query($conn, $query_avatar);
 
@@ -1068,9 +1076,7 @@ function formatDate($date) {
                     <a href="mis_cursos.php" class="nav-link">
                         <i class="fas fa-compass"></i>
                         <span>Mis Aventuras</span>
-                        <?php if(mysqli_num_rows($res_cursos) > 0): ?>
-                            <span class="badge-notification ms-auto"><?php echo mysqli_num_rows($res_cursos); ?></span>
-                        <?php endif; ?>
+                        <!-- NOTIFICACIÓN ELIMINADA - No debe mostrar número -->
                     </a>
                 </li>
                 <li class="nav-item">
@@ -1083,12 +1089,33 @@ function formatDate($date) {
                     <a href="mis_actividades.php" class="nav-link active">
                         <i class="fas fa-tasks"></i>
                         <span>Mis Misiones</span>
-                        <?php if(mysqli_num_rows($res_actividades) > 0): ?>
-                            <span class="badge-notification ms-auto"><?php echo mysqli_num_rows($res_actividades); ?></span>
+                        <?php 
+                        // Calcular misiones PENDIENTES para el ALUMNO
+                        // Pendiente = NO ha entregado Y NO está vencida
+                        $misiones_pendientes = 0;
+                        foreach($actividades_data as $act) {
+                            // Verificar si está vencida
+                            $fecha_limite = strtotime($act['fecha_limite']);
+                            $hoy = time();
+                            $tiene_fecha_limite = $act['fecha_limite'] && !empty($act['fecha_limite']);
+                            
+                            // Está vencida si: tiene fecha, la fecha pasó, y NO ha entregado
+                            $vencida = $tiene_fecha_limite && $hoy > $fecha_limite && !$act['entrega_id'];
+                            
+                            // Para el alumno, una misión está PENDIENTE solo si:
+                            // NO ha entregado Y NO está vencida
+                            $es_pendiente = (!$act['entrega_id'] && !$vencida);
+                            
+                            if ($es_pendiente) {
+                                $misiones_pendientes++;
+                            }
+                        }
+                        ?>
+                        <?php if($misiones_pendientes > 0): ?>
+                            <span class="badge-notification ms-auto"><?php echo $misiones_pendientes; ?></span>
                         <?php endif; ?>
                     </a>
                 </li>
-            
                 <li class="nav-item">
                     <a href="avatar_shop.php" class="nav-link">
                         <i class="fas fa-user-astronaut"></i>
@@ -1253,6 +1280,7 @@ function formatDate($date) {
                     $mostrar_entregar = !$act['entrega_id'] && !$vencida;
                     $mostrar_ver = $act['entrega_id'];
                     $mostrar_editar = $act['entrega_id'] && $act['estado_entrega'] == 'pendiente';
+                    $mostrar_mensaje_vencida = !$act['entrega_id'] && $vencida; 
                 ?>
                 <div class="activity-card <?php echo $status_class; ?> fade-in-up" style="animation-delay: <?php echo $delay; ?>s">
                     <div class="activity-header">
@@ -1294,6 +1322,13 @@ function formatDate($date) {
                         <?php if($act['descripcion']): ?>
                         <div class="activity-description">
                             <?php echo htmlspecialchars($act['descripcion']); ?>
+                        </div>
+                        <?php endif; ?>
+
+                        <?php if($mostrar_mensaje_vencida): ?>
+                        <div class="alert alert-danger p-3 mt-2">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            <strong>¡Misión Vencida!</strong> Esta misión ya no está disponible porque superó la fecha límite.
                         </div>
                         <?php endif; ?>
                         
