@@ -1468,7 +1468,9 @@ if (loginPass) {
     });
 }
 
-document.getElementById('form-login')?.addEventListener('submit', function(e) {
+document.getElementById('form-login')?.addEventListener('submit', async function(e) {
+    e.preventDefault(); // Siempre prevenir el envío tradicional
+    
     let valid = true;
     let errorMsg = '';
 
@@ -1485,14 +1487,47 @@ document.getElementById('form-login')?.addEventListener('submit', function(e) {
         errorMsg = errorMsg || 'La contraseña es obligatoria';
     }
 
-    // Solo prevenir si hay error
     if (!valid) {
-        e.preventDefault();
         showError(errorMsg, 'Error de validación');
+        return;
     }
-    // Si es válido, NO se hace nada y el formulario se envía solo
-});
 
+    // Crear FormData con los datos del formulario
+    const formData = new FormData(this);
+    
+    try {
+        // Mostrar loading en el botón
+        const submitBtn = this.querySelector('.btn-modal-submit');
+        const originalText = submitBtn.innerHTML;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Iniciando sesión...';
+        submitBtn.disabled = true;
+        
+        // Enviar petición AJAX
+        const response = await fetch('auth_login.php', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Redirigir al dashboard correspondiente
+            window.location.href = data.redirect;
+        } else {
+            showError(data.message, 'Inicio de sesión fallido');
+            // Restaurar botón
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+        }
+    } catch(error) {
+        console.error('Error:', error);
+        showError('Error al conectar con el servidor', 'Error de conexión');
+        // Restaurar botón
+        const submitBtn = this.querySelector('.btn-modal-submit');
+        submitBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Entrar a Mindspace';
+        submitBtn.disabled = false;
+    }
+});
 /* --- REGISTER validations --- */
 const regFields = {
     'reg-nombre':   { label: 'El nombre',     validate: v => v.trim().length >= 2 },
