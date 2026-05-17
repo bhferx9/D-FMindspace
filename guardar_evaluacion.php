@@ -87,7 +87,7 @@ try {
             // C. Calcular porcentaje
             $nuevo_porcentaje = ($total_actividades > 0) ? round(($actividades_hechas / $total_actividades) * 100) : 0;
             
-            // D. Actualizar tabla 'progreso'
+            // D. Actualizar tabla 'progreso' (CORREGIDO para PostgreSQL)
             $stmt_progreso = $conn->pdo->prepare("
                 INSERT INTO progreso (id_alumno, id_curso, porcentaje, actividades_completadas, fecha_actualizacion)
                 VALUES (:id_alumno, :id_curso, :porcentaje, :completadas, CURRENT_TIMESTAMP)
