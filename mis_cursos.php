@@ -54,6 +54,7 @@ try {
 // =============================================
 // OBTENER ACTIVIDADES PARA EL SIDEBAR
 // =============================================
+$misiones_vencidas = 0;
 $actividades_data = [];
 try {
     $stmt_actividades = $conn->pdo->prepare("
@@ -1097,6 +1098,11 @@ function adjustBrightness($hex, $steps) {
                             if ($es_pendiente) {
                                 $misiones_pendientes++;
                             }
+
+                            // Contar VENCIDAS: NO ha entregado Y está vencida
+                            if (!$act['entrega_id'] && $vencida) {
+                                $misiones_vencidas++;
+                            }
                         }
                         ?>
                         <?php if($misiones_pendientes > 0): ?>
@@ -1161,7 +1167,13 @@ function adjustBrightness($hex, $steps) {
                 <div class="stat-value stat-value-warning"><?php echo $total_actividades_completadas; ?></div>
                 <div class="stat-label">Misiones Completadas</div>
             </div>
-            
+            <div class="stat-card">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #ff6b8b, #ff4757);">
+                    <i class="fas fa-calendar-times"></i>
+                </div>
+                <div class="stat-value" style="color: #ff6b8b;"><?php echo $misiones_vencidas; ?></div>
+                <div class="stat-label">Misiones Vencidas</div>
+            </div>
             <div class="stat-card">
                 <div class="stat-icon stat-icon-info">
                     <i class="fas fa-clock"></i>

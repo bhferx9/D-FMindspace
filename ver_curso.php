@@ -1065,6 +1065,29 @@ function verificarEstadoTarea($conn, $actividad_id, $alumno_id, $fecha_limite = 
             font-weight: 600;
             z-index: 1;
         }
+
+        /* Botón de salir del curso */
+.btn-exit-course {
+    background: linear-gradient(90deg, #ff6b8b, #ff4757);
+    color: white;
+    border: none;
+    border-radius: 15px;
+    padding: 12px 25px;
+    font-weight: 700;
+    transition: all 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 5px 15px rgba(255, 107, 139, 0.3);
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.btn-exit-course:hover {
+    transform: translateY(-3px) scale(1.05);
+    box-shadow: 0 8px 20px rgba(255, 107, 139, 0.4);
+    color: white;
+}
     </style>
 </head>
 <body>
@@ -1193,7 +1216,9 @@ function verificarEstadoTarea($conn, $actividad_id, $alumno_id, $fecha_limite = 
             <a href="mis_cursos.php" class="btn-back">
                 <i class="fas fa-arrow-left"></i> Volver a Mis Aventuras
             </a>
-            
+            <button type="button" class="btn-exit-course" data-bs-toggle="modal" data-bs-target="#exitCourseModal">
+                <i class="fas fa-sign-out-alt"></i> Dejar esta aventura...
+            </button>
             <!-- Nivel del curso -->
             <div class="course-level">
                 <i class="fas fa-<?php 
@@ -1668,5 +1693,41 @@ function verificarEstadoTarea($conn, $actividad_id, $alumno_id, $fecha_limite = 
             });
         });
     </script>
+
+    <!-- Modal de confirmación para salir del curso -->
+<div class="modal fade" id="exitCourseModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border-radius: 25px; overflow: hidden; border: none;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #ff6b8b, #ff4757); color: white; border: none;">
+                <h5 class="modal-title" style="font-family: 'Fredoka One', cursive;">
+                    <i class="fas fa-exclamation-triangle me-2"></i> ¿Salir del Curso?
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="text-center mb-3">
+                    <i class="fas fa-compass" style="font-size: 4rem; color: var(--primary);"></i>
+                </div>
+                <h4 class="text-center mb-3">¿Estás seguro de que quieres salir de esta aventura?</h4>
+                <p class="text-muted text-center mb-3">
+                    Al salir del curso:
+                </p>
+                <ul class="text-muted mb-4">
+                    <li><i class="fas fa-times-circle text-danger me-2"></i>Perderás todo tu progreso en este curso</li>
+                    <li><i class="fas fa-times-circle text-danger me-2"></i>Tus entregas ya no serán visibles</li>
+                    <li><i class="fas fa-check-circle text-success me-2"></i>Podrás volver a inscribirte más tarde</li>
+                </ul>
+                <div class="d-flex gap-3 justify-content-center">
+                    <button type="button" class="btn-back" data-bs-dismiss="modal" style="margin-bottom: 0;">
+                        <i class="fas fa-times"></i> Cancelar
+                    </button>
+                    <a href="procesar_salir_curso.php?id=<?php echo $id_curso; ?>&confirm=si" class="btn-exit-course" style="text-decoration: none;">
+                        <i class="fas fa-sign-out-alt"></i> Sí, salir del curso
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 </body>
 </html>

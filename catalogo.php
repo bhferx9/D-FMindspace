@@ -11,12 +11,16 @@ if (!isset($_SESSION['user_id']) || $_SESSION['tipo'] != 'alumno') {
 $alumno_id = $_SESSION['user_id'];
 $nombre_alumno = $_SESSION['nombre'];
 
-// Consultar cursos que estén activos y en los que el alumno NO esté inscrito aún
+// Consultar cursos que estén activos y en los que el alumno NO esté inscrito (activo o inactivo)
 $query = "SELECT c.*, u.nombre as tutor_nombre 
           FROM cursos c 
           JOIN usuarios u ON c.id_tutor = u.id 
           WHERE c.activo = TRUE 
-          AND c.id NOT IN (SELECT id_curso FROM inscripciones WHERE id_alumno = '$alumno_id')
+          AND c.id NOT IN (
+              SELECT id_curso FROM inscripciones 
+              WHERE id_alumno = '$alumno_id' 
+              AND estado = 'activo'
+          )
           ORDER BY c.fecha_creacion DESC";
 $resultado = mysqli_query($conn, $query);
 

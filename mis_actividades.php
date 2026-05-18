@@ -58,6 +58,7 @@ $calificadas = 0;     // Con calificación
 $calificacion_promedio = 0;
 $total_calificacion = 0;
 $cont_calificadas = 0;
+$vencidas = 0;      // NUEVO: Con entrega vencida (sin entregar Y vencida)
 
 // Almacenar todas las actividades para usarlas en el modal
 $actividades_data = [];
@@ -88,6 +89,11 @@ if (mysqli_num_rows($res_actividades) > 0) {
             $calificadas++;
             $total_calificacion += $act['calificacion'];
             $cont_calificadas++;
+        }
+
+        // Contar VENCIDAS: NO ha entregado Y está vencida
+        if (!$act['entrega_id'] && $vencida) {
+            $vencidas++;
         }
     }
     
@@ -1164,6 +1170,14 @@ function formatDate($date) {
                 </div>
                 <div class="stat-value stat-value-warning"><?php echo $pendientes; ?></div>
                 <div class="stat-label">Misiones Pendientes</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #ff6b8b, #ff4757);">
+                    <i class="fas fa-calendar-times"></i>
+                </div>
+                <div class="stat-value" style="color: #ff6b8b;"><?php echo $vencidas; ?></div>
+                <div class="stat-label">Misiones Vencidas</div>
             </div>
             
             <div class="stat-card">
