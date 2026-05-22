@@ -20,7 +20,6 @@ try {
     if ($result_padre) {
         $nombre_padre = $result_padre['nombre'];
     } else {
-        // Si no se encuentra (raro), usar un fallback
         $nombre_padre = 'Padre';
     }
 } catch(PDOException $e) {
@@ -36,8 +35,55 @@ if (count($partes) >= 2) {
     $iniciales = strtoupper(substr($nombre_padre, 0, 2));
 }
 
-// Obtener hijos vinculados - CORREGIDO PARA POSTGRESQL
-// Obtener hijos vinculados - CORREGIDO PARA POSTGRESQL
+// Mapeo de avatares (igual que en dashboard_alumno.php)
+$avatares = [
+    'panda' => ['emoji' => '🐼', 'color' => '#3A506B', 'nivel' => 1],
+    'zorro' => ['emoji' => '🦊', 'color' => '#E67E22', 'nivel' => 1],
+    'dragon' => ['emoji' => '🐉', 'color' => '#FF6B6B', 'nivel' => 1],
+    'leon' => ['emoji' => '🦁', 'color' => '#FFD93D', 'nivel' => 2],
+    'dino' => ['emoji' => '🦖', 'color' => '#6BCF7F', 'nivel' => 1],
+    'robot' => ['emoji' => '🤖', 'color' => '#4D96FF', 'nivel' => 3],
+    'astronauta' => ['emoji' => '👨‍🚀', 'color' => '#845EC2', 'nivel' => 4],
+    'superheroe' => ['emoji' => '🦸‍♂️', 'color' => '#FF6B8B', 'nivel' => 5],
+    'mago' => ['emoji' => '🧙‍♂️', 'color' => '#00C2A8', 'nivel' => 6],
+    'ninja' => ['emoji' => '🥷', 'color' => '#4A4A4A', 'nivel' => 3],
+    'fenix' => ['emoji' => '🔥', 'color' => '#FF4500', 'nivel' => 7],
+    'unicornio' => ['emoji' => '🦄', 'color' => '#D65DB1', 'nivel' => 8],
+    'ballena' => ['emoji' => '🐋', 'color' => '#4169E1', 'nivel' => 3],
+    'aguila' => ['emoji' => '🦅', 'color' => '#DAA520', 'nivel' => 3],
+    'lobo' => ['emoji' => '🐺', 'color' => '#708090', 'nivel' => 3],
+    'pinguino' => ['emoji' => '🐧', 'color' => '#1C2833', 'nivel' => 2],
+    'bufalo' => ['emoji' => '🦬', 'color' => '#8B4513', 'nivel' => 2],
+    'conejo' => ['emoji' => '🐰', 'color' => '#F4A460', 'nivel' => 1],
+    'gato' => ['emoji' => '🐱', 'color' => '#FFA07A', 'nivel' => 1],
+    'perro' => ['emoji' => '🐶', 'color' => '#DEB887', 'nivel' => 1],
+    'raton' => ['emoji' => '🐭', 'color' => '#B0C4DE', 'nivel' => 1],
+    'abeja' => ['emoji' => '🐝', 'color' => '#FFD700', 'nivel' => 2],
+    'pulpo' => ['emoji' => '🐙', 'color' => '#CD5C5C', 'nivel' => 2],
+    'robot_avanzado' => ['emoji' => '🤖', 'color' => '#2E86AB', 'nivel' => 5],
+    'titan' => ['emoji' => '🏛️', 'color' => '#8B0000', 'nivel' => 4],
+    'centauro' => ['emoji' => '🏹', 'color' => '#CD853F', 'nivel' => 4],
+    'ciborg' => ['emoji' => '🦾', 'color' => '#4682B4', 'nivel' => 5],
+    'kraken' => ['emoji' => '🐙', 'color' => '#2F4F4F', 'nivel' => 5],
+    'valquiria' => ['emoji' => '⚔️', 'color' => '#C0C0C0', 'nivel' => 5],
+    'dios_ra' => ['emoji' => '☀️', 'color' => '#FFD700', 'nivel' => 6],
+    'leviathan' => ['emoji' => '🐉', 'color' => '#1a237e', 'nivel' => 6],
+    'thor' => ['emoji' => '🔨', 'color' => '#5DADE2', 'nivel' => 6],
+    'cerbero' => ['emoji' => '🐕‍🦺', 'color' => '#8B4513', 'nivel' => 6],
+    'zeus' => ['emoji' => '⚡', 'color' => '#FFD700', 'nivel' => 7]
+];
+
+function getAvatarEmoji($avatar_key) {
+    global $avatares;
+    return isset($avatares[$avatar_key]) ? $avatares[$avatar_key]['emoji'] : '🧒';
+}
+
+function getAvatarColor($avatar_key) {
+    global $avatares;
+    return isset($avatares[$avatar_key]) ? $avatares[$avatar_key]['color'] : '#3A506B';
+}
+
+// Obtener hijos vinculados
 try {
     $query_hijos = "
         SELECT 
@@ -59,43 +105,21 @@ try {
     $stmt->execute([$id_padre]);
     $hijos = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
-    // Depuración
-    echo "<!-- DEBUG: Número de hijos encontrados en consulta principal: " . count($hijos) . " -->";
-    
 } catch(PDOException $e) {
     $hijos = [];
-    echo "<!-- DEBUG Error en consulta principal: " . $e->getMessage() . " -->";
 }
 
 $total_hijos = count($hijos);
 
-function getAvatarEmoji($avatar) {
-    $emojis = [
-        'panda' => '🐼', 'dragon' => '🐉', 'leon' => '🦁',
-        'buho' => '🦉', 'zorro' => '🦊', 'gato' => '🐱'
-    ];
-    return $emojis[$avatar] ?? '🧒';
-}
-
-// DEPURACIÓN - Mostrar ID del padre
-echo "<!-- DEBUG: ID del padre en sesión: " . $id_padre . " -->";
-
-// Consulta de prueba SIMPLE
-try {
-    $test_sql = "SELECT u.id, u.nombre, u.avatar 
-                 FROM vinculaciones v 
-                 JOIN usuarios u ON v.id_alumno = u.id 
-                 WHERE v.id_padre = ? AND v.estado = 'activo'";
-    $test_stmt = $conn->pdo->prepare($test_sql);
-    $test_stmt->execute([$id_padre]);
-    $test_hijos = $test_stmt->fetchAll(PDO::FETCH_ASSOC);
-    
-    echo "<!-- DEBUG: Prueba simple encontró " . count($test_hijos) . " hijos -->";
-    if (count($test_hijos) > 0) {
-        echo "<!-- DEBUG: Primer hijo: " . $test_hijos[0]['nombre'] . " -->";
-    }
-} catch(PDOException $e) {
-    echo "<!-- DEBUG Error: " . $e->getMessage() . " -->";
+// Mostrar mensaje de toast si existe
+if (isset($_SESSION['toast'])) {
+    $toast = $_SESSION['toast'];
+    $tipo = $toast[0];
+    $mensaje = $toast[1];
+    unset($_SESSION['toast']);
+    $toast_script = "<script>showToast('$mensaje', '$tipo');</script>";
+} else {
+    $toast_script = "";
 }
 ?>
 <!DOCTYPE html>
@@ -464,9 +488,12 @@ try {
         }
  
         .child-emoji {
-            width: 68px; height: 68px;
+            width: 68px;
+            height: 68px;
             border-radius: 18px;
-            display: flex; align-items: center; justify-content: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             font-size: 2.4rem;
             background: var(--gray-100);
             transition: transform 0.24s;
@@ -882,11 +909,12 @@ try {
                 $strip_class = 'strip-' . $color_ring;
                 $ring_class = 'ring-' . $color_ring;
                 $emoji = getAvatarEmoji($hijo['avatar']);
+                $avatar_color = getAvatarColor($hijo['avatar']);
             ?>
             <div class="child-card fade-up" style="animation-delay: <?= 0.05 + $index*0.07 ?>s" onclick="selectChild('<?= htmlspecialchars($hijo['nombre'], ENT_QUOTES) ?>', <?= $hijo['id'] ?>)">
                 <div class="card-strip <?= $strip_class ?>"></div>
                 <div class="card-top">
-                    <div class="child-emoji"><?= $emoji ?></div>
+                    <div class="child-emoji" style="background: <?= $avatar_color ?>;"><?= $emoji ?></div>
                     <div class="progress-ring-wrap">
                         <svg class="progress-ring" width="52" height="52" viewBox="0 0 52 52">
                             <circle class="ring-bg" cx="26" cy="26" r="21"/>
@@ -1047,6 +1075,11 @@ try {
             new bootstrap.Toast(el).show();
             el.addEventListener('hidden.bs.toast', () => el.remove());
         }
+
+        function showToast(msg, type) {
+            toast(msg, type);
+        }
+        <?php echo $toast_script; ?>
     </script>
 </body>
 </html>

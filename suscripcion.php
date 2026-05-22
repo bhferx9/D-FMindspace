@@ -10,6 +10,9 @@ if (!isset($_SESSION['user_id']) || $_SESSION['tipo'] != 'padre') {
 
 $id_padre = (int)$_SESSION['user_id'];
 
+// Incluir funciones de suscripción
+require_once 'funciones_suscripcion.php';
+
 // Obtener datos del padre desde la base de datos (PDO)
 try {
     $query_padre = "SELECT nombre FROM usuarios WHERE id = :id AND tipo = 'padre'";
@@ -35,53 +38,106 @@ if (count($partes) >= 2) {
     $iniciales = strtoupper(substr($nombre_padre, 0, 2));
 }
 
-// --- DATOS DE SUSCRIPCIÓN (simulados - reemplazar con consultas reales) ---
-$plan_actual = [
-    'nombre' => 'Plan Familiar',
-    'precio' => 299,
-    'moneda' => 'MXN',
-    'periodo' => 'mes',
-    'proxima_renovacion' => '2026-04-27',
-    'dias_restantes' => 31,
-    'porcentaje_periodo' => 3,
-    'features' => [
-        'Hasta 4 perfiles de alumnos',
-        'Reportes PDF ilimitados',
-        'Mensajería con docentes',
-        'Historial completo'
-    ]
-];
+// =============================================
+// DATOS REALES DESDE LA BASE DE DATOS
+// =============================================
 
-// Métodos de pago (simulados)
-$metodos_pago = [
-    [
-        'tipo' => 'card',
-        'marca' => 'Visa',
-        'ultimos4' => '4821',
-        'expira' => '09/2028',
-        'procesador' => 'Stripe',
-        'principal' => true
-    ],
-    [
-        'tipo' => 'paypal',
-        'email' => 'maria.gonzalez@email.com',
-        'principal' => false
-    ]
-];
+// Obtener suscripción activa real
+$suscripcion_activa = obtenerSuscripcionActiva($conn, $id_padre);
 
-// Historial de facturas (simulado)
-$facturas = [
-    ['id' => 'INV-2026-03', 'plan' => 'Plan Familiar', 'fecha' => '2026-03-27', 'monto' => 299.00, 'estado' => 'paid'],
-    ['id' => 'INV-2026-02', 'plan' => 'Plan Familiar', 'fecha' => '2026-02-27', 'monto' => 299.00, 'estado' => 'paid'],
-    ['id' => 'INV-2026-01', 'plan' => 'Plan Familiar', 'fecha' => '2026-01-27', 'monto' => 299.00, 'estado' => 'paid'],
-    ['id' => 'INV-2025-12', 'plan' => 'Plan Familiar', 'fecha' => '2025-12-27', 'monto' => 299.00, 'estado' => 'paid'],
-    ['id' => 'INV-2025-11', 'plan' => 'Plan Familiar', 'fecha' => '2025-11-27', 'monto' => 299.00, 'estado' => 'paid'],
-    ['id' => 'INV-2025-10', 'plan' => 'Plan Básico',   'fecha' => '2025-10-27', 'monto' => 149.00, 'estado' => 'refunded'],
-    ['id' => 'INV-2025-09', 'plan' => 'Plan Básico',   'fecha' => '2025-09-27', 'monto' => 149.00, 'estado' => 'paid'],
-    ['id' => 'INV-2025-08', 'plan' => 'Plan Básico',   'fecha' => '2025-08-27', 'monto' => 149.00, 'estado' => 'paid'],
-];
+if ($suscripcion_activa) {
+    // Datos reales desde la base de datos
+    $plan_actual = [
+        'nombre' => $suscripcion_activa['plan_nombre'],
+        'precio' => floatval($suscripcion_activa['precio']),
+        'moneda' => $suscripcion_activa['moneda'],
+        'periodo' => $suscripcion_activa['periodo'],
+        'proxima_renovacion' => $suscripcion_activa['fecha_proxima_renovacion'],
+        'dias_restantes' => calcularDiasRestantes($suscripcion_activa['fecha_proxima_renovacion']),
+        'porcentaje_periodo' => calcularPorcentajePeriodo(
+            $suscripcion_activa['fecha_inicio'], 
+            $suscripcion_activa['fecha_proxima_renovacion']
+        ),
+        'features' => $suscripcion_activa['caracteristicas']
+    ];
+} else {
+    // Si no hay suscripción activa, mostrar plan demo
+    $plan_actual = [
+        'nombre' => 'Plan Familiar',
+        'precio' => 299,
+        'moneda' => 'MXN',
+        'periodo' => 'mes',
+        'proxima_renovacion' => date('Y-m-d', strtotime('+30 days')),
+        'dias_restantes' => 30,
+        'porcentaje_periodo' => 10,
+        'features' => ['Hasta 4 perfiles de alumnos', 'Reportes PDF ilimitados', 'Mensajería con docentes', 'Historial completo']
+    ];
+}
+
+// Obtener métodos de pago reales
+$metodos_pago_db = obtenerMetodosPago($conn, $id_padre);
+
+// Formatear métodos de pago para la vista
+$metodos_pago = [];
+foreach ($metodos_pago_db as $mp) {
+    if ($mp['tipo'] == 'card') {
+        $metodos_pago[] = [
+            'tipo' => 'card',
+            'marca' => $mp['marca'],
+            'ultimos4' => $mp['ultimos4'],
+            'expira' => sprintf("%02d/%d", $mp['expira_mes'], $mp['expira_anio']),
+            'procesador' => $mp['procesador'],
+            'principal' => $mp['es_principal']
+        ];
+    } else {
+        $metodos_pago[] = [
+            'tipo' => 'paypal',
+            'email' => $mp['paypal_email'],
+            'principal' => $mp['es_principal']
+        ];
+    }
+}
+
+// Si no hay métodos de pago, mostrar datos demo
+if (empty($metodos_pago)) {
+    $metodos_pago = [
+        [
+            'tipo' => 'card',
+            'marca' => 'Visa',
+            'ultimos4' => '••••',
+            'expira' => '••/••••',
+            'procesador' => 'Stripe',
+            'principal' => true
+        ]
+    ];
+}
+
+// Obtener facturas reales
+$facturas_db = obtenerFacturas($conn, $id_padre, 20, 0);
+
+$facturas = [];
+foreach ($facturas_db as $fact) {
+    $facturas[] = [
+        'id' => $fact['numero_factura'],
+        'plan' => $fact['plan_nombre'],
+        'fecha' => $fact['fecha_emision'],
+        'monto' => floatval($fact['monto']),
+        'estado' => $fact['estado']
+    ];
+}
+
+// Si no hay facturas, mostrar datos demo
+if (empty($facturas)) {
+    $facturas = [
+        ['id' => 'FACT-001', 'plan' => $plan_actual['nombre'], 'fecha' => date('Y-m-d', strtotime('-1 month')), 'monto' => $plan_actual['precio'], 'estado' => 'pagado'],
+        ['id' => 'FACT-002', 'plan' => $plan_actual['nombre'], 'fecha' => date('Y-m-d', strtotime('-2 month')), 'monto' => $plan_actual['precio'], 'estado' => 'pagado'],
+    ];
+}
 
 $facturas_json = json_encode($facturas);
+
+// Obtener estadísticas de pagos
+$estadisticas = obtenerEstadisticasPagos($conn, $id_padre);
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -369,8 +425,9 @@ $facturas_json = json_encode($facturas);
         .inv-amount { font-family:'Nunito',sans-serif; font-size:1rem; font-weight:800; color:var(--gray-900); text-align:right; white-space:nowrap; }
  
         .inv-badge { display:inline-flex; align-items:center; gap:5px; padding:4px 11px; border-radius:var(--r-pill); font-size:.72rem; font-weight:700; white-space:nowrap; }
-        .inv-badge.paid     { background:var(--accent-soft); color:#3d7318; }
-        .inv-badge.refunded { background:var(--warn-soft);   color:#92400e; }
+        .inv-badge.pagado     { background:var(--accent-soft); color:#3d7318; }
+        .inv-badge.reembolsado { background:var(--warn-soft);   color:#92400e; }
+        .inv-badge.pendiente { background:var(--secondary-soft); color:#92600a; }
  
         .btn-inv-dl {
             display:inline-flex; align-items:center; gap:5px;
@@ -386,6 +443,14 @@ $facturas_json = json_encode($facturas);
         .load-more-row { padding:14px 24px; text-align:center; }
         .btn-load-more { background:none; border:none; color:var(--primary); font-size:.82rem; font-weight:600; cursor:pointer; font-family:'DM Sans',sans-serif; display:inline-flex; align-items:center; gap:6px; transition:opacity .18s; }
         .btn-load-more:hover { opacity:.75; }
+ 
+        /* ══════════════ STATS CARDS ══════════════ */
+        .stats-grid {
+            display:grid;
+            grid-template-columns:repeat(2, 1fr);
+            gap:14px;
+            margin-bottom:24px;
+        }
  
         /* ══════════════ PLAN CHANGE CARDS ══════════════ */
         .plans-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:24px; }
@@ -508,6 +573,7 @@ $facturas_json = json_encode($facturas);
             .invoice-row { grid-template-columns:36px 1fr auto; }
             .invoice-row .inv-badge,
             .invoice-row .btn-inv-dl { display:none; }
+            .stats-grid { grid-template-columns:1fr; }
         }
         @media (max-width:540px) { .card-form-row { grid-template-columns:1fr; } }
     </style>
@@ -623,6 +689,34 @@ $facturas_json = json_encode($facturas);
         </div>
     </div>
 
+    <!-- ─── STATS CARDS ─── -->
+    <div class="stats-grid fade-up" style="animation-delay:.12s">
+        <div class="payment-method-card" style="padding: 20px;">
+            <div class="d-flex align-items-center gap-3">
+                <div class="sum-icon" style="background:var(--primary-soft); color:var(--primary); margin-bottom:0; width:48px; height:48px;">
+                    <i class="fas fa-chart-line"></i>
+                </div>
+                <div>
+                    <div class="text-muted small">Total gastado</div>
+                    <div class="fs-2 fw-bold" style="font-family:'Nunito',sans-serif;">$<?= number_format($estadisticas['total_gastado'], 0) ?></div>
+                    <div class="text-muted small">MXN · Desde el inicio</div>
+                </div>
+            </div>
+        </div>
+        <div class="payment-method-card" style="padding: 20px;">
+            <div class="d-flex align-items-center gap-3">
+                <div class="sum-icon" style="background:var(--secondary-soft); color:var(--secondary); margin-bottom:0; width:48px; height:48px;">
+                    <i class="fas fa-calendar-check"></i>
+                </div>
+                <div>
+                    <div class="text-muted small">Último pago</div>
+                    <div class="fs-2 fw-bold" style="font-family:'Nunito',sans-serif;">$<?= number_format($estadisticas['ultimo_pago']['monto'] ?? 0, 0) ?></div>
+                    <div class="text-muted small"><?= $estadisticas['ultimo_pago'] ? date('d M Y', strtotime($estadisticas['ultimo_pago']['fecha_pago'])) : 'Sin pagos registrados' ?></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- ─── PAYMENT METHOD ─── -->
     <div class="section-label fade-up" style="animation-delay:.14s">Método de pago</div>
     <div class="payment-method-card fade-up" style="animation-delay:.16s">
@@ -724,7 +818,12 @@ $facturas_json = json_encode($facturas);
     </div>
 
 </main>
-
+<!-- Botón de simulación de pago (solo desarrollo) -->
+<div style="position: fixed; bottom: 20px; right: 20px; z-index: 1000;">
+    <button class="btn btn-sm btn-secondary" onclick="simularPago()" style="opacity:0.7;">
+        <i class="fas fa-flask"></i> Simular Pago (Demo)
+    </button>
+</div>
 <!-- ═══════ MODAL: Change Payment ═══════ -->
 <div class="modal fade" id="paymentModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
@@ -885,7 +984,7 @@ $facturas_json = json_encode($facturas);
                         <div>
                             <div style="font-size:.85rem;font-weight:700;color:var(--danger);margin-bottom:4px;">¿Seguro que deseas cancelar?</div>
                             <p style="font-size:.8rem;color:var(--gray-600);margin:0;line-height:1.55;">
-                                Al cancelar perderás acceso a los reportes PDF, la mensajería con docentes y el historial completo al final del período actual (27 Abr 2026). Los datos de tus hijos se conservarán durante 90 días.
+                                Al cancelar perderás acceso a los reportes PDF, la mensajería con docentes y el historial completo al final del período actual (<?= date('d M Y', strtotime($plan_actual['proxima_renovacion'])) ?>). Los datos de tus hijos se conservarán durante 90 días.
                             </p>
                         </div>
                     </div>
@@ -923,20 +1022,22 @@ $facturas_json = json_encode($facturas);
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 /* ═══════════════════════════════════════════════════════════════════════════════
-   JAVASCRIPT COMPLETO (INCLUYE FACTURAS, FILTROS, MODALES, TOAST, ETC.)
+   JAVASCRIPT COMPLETO - CORREGIDO
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 // ── Sidebar toggle ──
-const sidebar     = document.getElementById('sidebar');
-const menuToggle  = document.getElementById('menuToggle');
-menuToggle.addEventListener('click', () => {
-    sidebar.classList.toggle('open');
-    menuToggle.innerHTML = sidebar.classList.contains('open')
-        ? '<i class="fas fa-times"></i>' : '<i class="fas fa-bars"></i>';
-});
+const sidebar = document.getElementById('sidebar');
+const menuToggle = document.getElementById('menuToggle');
+if (menuToggle) {
+    menuToggle.addEventListener('click', () => {
+        sidebar.classList.toggle('open');
+        menuToggle.innerHTML = sidebar.classList.contains('open')
+            ? '<i class="fas fa-times"></i>' : '<i class="fas fa-bars"></i>';
+    });
+}
 document.addEventListener('click', e => {
-    if (window.innerWidth < 992 && sidebar.classList.contains('open')
-        && !sidebar.contains(e.target) && !menuToggle.contains(e.target)) {
+    if (window.innerWidth < 992 && sidebar && sidebar.classList.contains('open')
+        && !sidebar.contains(e.target) && menuToggle && !menuToggle.contains(e.target)) {
         sidebar.classList.remove('open');
         menuToggle.innerHTML = '<i class="fas fa-bars"></i>';
     }
@@ -963,25 +1064,46 @@ function getFiltered() {
 
 function renderInvoices() {
     const filtered = getFiltered();
-    const visible  = filtered.slice(0, visibleCount);
-    const list     = document.getElementById('invoiceList');
-    const lmRow    = document.getElementById('loadMoreRow');
+    const visible = filtered.slice(0, visibleCount);
+    const list = document.getElementById('invoiceList');
+    const lmRow = document.getElementById('loadMoreRow');
+
+    if (!list) return;
 
     list.innerHTML = visible.map(inv => {
-        const fechaFormateada = new Date(inv.fecha).toLocaleDateString('es-MX', { day:'2-digit', month:'short', year:'numeric' }).replace(/ /g, ' ');
-        const iconBg   = inv.estado === 'paid' ? 'var(--primary-soft)' : 'var(--warn-soft)';
-        const iconColor= inv.estado === 'paid' ? 'var(--primary)' : 'var(--warn)';
-        const icon     = inv.estado === 'paid' ? 'fa-file-invoice' : 'fa-rotate-left';
-        const badgeClass = inv.estado === 'paid' ? 'paid' : 'refunded';
-        const badgeText  = inv.estado === 'paid' ? 'Pagado' : 'Reembolsado';
-        const badgeIcon  = inv.estado === 'paid' ? 'fa-circle-check' : 'fa-rotate-left';
+        const fechaFormateada = new Date(inv.fecha).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, ' ');
+        let iconBg, iconColor, icon, badgeClass, badgeText, badgeIcon;
+        
+        if (inv.estado === 'pagado') {
+            iconBg = 'var(--primary-soft)';
+            iconColor = 'var(--primary)';
+            icon = 'fa-file-invoice';
+            badgeClass = 'pagado';
+            badgeText = 'Pagado';
+            badgeIcon = 'fa-circle-check';
+        } else if (inv.estado === 'reembolsado') {
+            iconBg = 'var(--warn-soft)';
+            iconColor = 'var(--warn)';
+            icon = 'fa-rotate-left';
+            badgeClass = 'reembolsado';
+            badgeText = 'Reembolsado';
+            badgeIcon = 'fa-rotate-left';
+        } else {
+            iconBg = 'var(--secondary-soft)';
+            iconColor = 'var(--secondary)';
+            icon = 'fa-clock';
+            badgeClass = 'pendiente';
+            badgeText = 'Pendiente';
+            badgeIcon = 'fa-clock';
+        }
+        
         return `
         <div class="invoice-row">
             <div class="inv-icon" style="background:${iconBg}; color:${iconColor};">
                 <i class="fas ${icon}"></i>
             </div>
             <div>
-                <div class="inv-plan">${inv.plan}</div>
+                <div class="inv-plan">${escapeHtml(inv.plan)}</div>
                 <div class="inv-date">${inv.id} &nbsp;·&nbsp; ${fechaFormateada}</div>
             </div>
             <div class="inv-amount">$${inv.monto.toFixed(2)} MXN</div>
@@ -999,16 +1121,24 @@ function renderInvoices() {
         </div>
     `}).join('');
 
-    lmRow.style.display = visibleCount >= filtered.length ? 'none' : 'block';
+    if (lmRow) {
+        lmRow.style.display = visibleCount >= filtered.length ? 'none' : 'block';
+    }
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/[&<>]/g, function(m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    });
 }
 
 function loadMore() {
     visibleCount += 4;
     renderInvoices();
-}
-
-function downloadInvoice(id) {
-    showToast(`Descargando factura ${id}…`, 'info');
 }
 
 document.addEventListener('DOMContentLoaded', renderInvoices);
@@ -1018,45 +1148,121 @@ let currentGateway = 'stripe';
 
 function openChangePayment(type = 'stripe') {
     selectGateway(type);
-    new bootstrap.Modal(document.getElementById('paymentModal')).show();
+    const modal = new bootstrap.Modal(document.getElementById('paymentModal'));
+    modal.show();
 }
 
 function selectGateway(gw) {
     currentGateway = gw;
-    document.getElementById('stripeBtn').classList.toggle('active', gw === 'stripe');
-    document.getElementById('paypalBtn').classList.toggle('active', gw === 'paypal');
-    document.getElementById('stripeForm').style.display  = gw === 'stripe'  ? 'block' : 'none';
-    document.getElementById('paypalForm').style.display  = gw === 'paypal'  ? 'block' : 'none';
+    const stripeBtn = document.getElementById('stripeBtn');
+    const paypalBtn = document.getElementById('paypalBtn');
+    const stripeForm = document.getElementById('stripeForm');
+    const paypalForm = document.getElementById('paypalForm');
+    
+    if (stripeBtn) stripeBtn.classList.toggle('active', gw === 'stripe');
+    if (paypalBtn) paypalBtn.classList.toggle('active', gw === 'paypal');
+    if (stripeForm) stripeForm.style.display = gw === 'stripe' ? 'block' : 'none';
+    if (paypalForm) paypalForm.style.display = gw === 'paypal' ? 'block' : 'none';
 }
 
 function formatCard(input) {
-    let v = input.value.replace(/\D/g,'').substring(0,16);
+    let v = input.value.replace(/\D/g, '').substring(0, 16);
     input.value = v.match(/.{1,4}/g)?.join('  ') || v;
 }
 
 function formatExpiry(input) {
-    let v = input.value.replace(/\D/g,'').substring(0,4);
-    if (v.length >= 2) v = v.substring(0,2) + ' / ' + v.substring(2);
+    let v = input.value.replace(/\D/g, '').substring(0, 4);
+    if (v.length >= 2) v = v.substring(0, 2) + ' / ' + v.substring(2);
     input.value = v;
 }
 
+// ── Guardar método de pago desde el modal ──
 function savePaymentMethod() {
+    const activeBtn = document.querySelector('.gateway-btn.active');
+    const currentGateway = activeBtn?.id === 'stripeBtn' ? 'stripe' : 'paypal';
+    
     if (currentGateway === 'stripe') {
-        const num = document.getElementById('cardNumber').value;
-        if (!num || num.replace(/\s/g,'').length < 16) {
+        const num = document.getElementById('cardNumber')?.value;
+        const name = document.querySelector('#stripeForm input[placeholder*="Nombre"]')?.value;
+        const expiry = document.querySelector('#stripeForm .card-form-row input:first-child')?.value;
+        
+        if (!num || num.replace(/\s/g, '').length < 16) {
             showToast('Ingresa un número de tarjeta válido', 'warn');
             return;
         }
+        
+        if (!name) {
+            showToast('Ingresa el nombre en la tarjeta', 'warn');
+            return;
+        }
+        
+        if (!expiry || expiry.length < 5) {
+            showToast('Ingresa una fecha de vencimiento válida', 'warn');
+            return;
+        }
+        
+        // Procesar datos
+        const formData = new FormData();
+        formData.append('accion', 'guardar_metodo_pago');
+        formData.append('tipo', 'stripe');
+        formData.append('marca', 'Visa');
+        formData.append('ultimos4', num.replace(/\s/g, '').slice(-4));
+        formData.append('expira_mes', expiry.split('/')[0].trim());
+        formData.append('expira_anio', expiry.split('/')[1].trim());
+        
+        fetch('procesar_suscripcion.php', {
+            method: 'POST',
+            body: formData
+        }).then(response => {
+            if (response.redirected) {
+                window.location.href = response.url;
+            } else {
+                return response.json();
+            }
+        }).then(data => {
+            if (data && !data.success) {
+                showToast(data.message, 'error');
+            }
+        }).catch(() => {
+            showToast('Error al guardar método de pago', 'error');
+        });
+    } 
+    else if (currentGateway === 'paypal') {
+        const emailInput = prompt('Ingresa tu correo de PayPal:', 'usuario@ejemplo.com');
+        
+        if (emailInput && emailInput.includes('@')) {
+            const formData = new FormData();
+            formData.append('accion', 'guardar_metodo_pago');
+            formData.append('tipo', 'paypal');
+            formData.append('email', emailInput);
+            
+            fetch('procesar_suscripcion.php', {
+                method: 'POST',
+                body: formData
+            }).then(response => {
+                if (response.redirected) {
+                    window.location.href = response.url;
+                }
+            });
+        } else if (emailInput) {
+            showToast('Correo electrónico inválido', 'warn');
+            return;
+        }
     }
-    bootstrap.Modal.getInstance(document.getElementById('paymentModal')).hide();
-    showToast('Método de pago actualizado correctamente', 'success');
+    
+    // Cerrar modal
+    const modal = bootstrap.Modal.getInstance(document.getElementById('paymentModal'));
+    if (modal) modal.hide();
+    
+    showToast('Procesando...', 'info');
 }
 
 // ── Modal de cambio de plan ──
 let selectedPlan = 'familiar';
 
 function openChangePlan() {
-    new bootstrap.Modal(document.getElementById('planModal')).show();
+    const modal = new bootstrap.Modal(document.getElementById('planModal'));
+    modal.show();
 }
 
 function selectPlanOption(el, plan) {
@@ -1065,49 +1271,173 @@ function selectPlanOption(el, plan) {
     selectedPlan = plan;
     const btn = document.getElementById('confirmPlanBtn');
     const isDifferent = plan !== 'familiar';
-    btn.disabled = !isDifferent;
-    btn.style.opacity  = isDifferent ? '1' : '.5';
-    btn.style.cursor   = isDifferent ? 'pointer' : 'not-allowed';
+    if (btn) {
+        btn.disabled = !isDifferent;
+        btn.style.opacity = isDifferent ? '1' : '.5';
+        btn.style.cursor = isDifferent ? 'pointer' : 'not-allowed';
+    }
 }
 
+// ── Confirmar cambio de plan ──
 function confirmPlanChange() {
-    const names = { basico:'Plan Básico', familiar:'Plan Familiar', institucional:'Plan Institucional' };
-    bootstrap.Modal.getInstance(document.getElementById('planModal')).hide();
-    showToast(`Cambio a ${names[selectedPlan]} programado para el próximo ciclo`, 'success');
+    const selected = document.querySelector('.plan-option.selected');
+    if (!selected) {
+        showToast('Selecciona un plan primero', 'warn');
+        return;
+    }
+    
+    let plan = 'familiar';
+    const planName = selected.querySelector('.plan-opt-name')?.innerText || '';
+    if (planName.includes('Básico')) plan = 'basico';
+    else if (planName.includes('Familiar')) plan = 'familiar';
+    else if (planName.includes('Institucional')) plan = 'institucional';
+    
+    const formData = new FormData();
+    formData.append('accion', 'cambiar_plan');
+    formData.append('plan', plan);
+    
+    fetch('procesar_suscripcion.php', {
+        method: 'POST',
+        body: formData
+    }).then(response => {
+        if (response.redirected) {
+            window.location.href = response.url;
+        }
+    }).catch(() => {
+        showToast('Error al cambiar de plan', 'error');
+    });
+    
+    const modal = bootstrap.Modal.getInstance(document.getElementById('planModal'));
+    if (modal) modal.hide();
+    
+    showToast('Procesando cambio de plan...', 'info');
 }
 
 // ── Modal de cancelación ──
 function openCancel() {
-    new bootstrap.Modal(document.getElementById('cancelModal')).show();
+    const modal = new bootstrap.Modal(document.getElementById('cancelModal'));
+    modal.show();
 }
 
+// ── Confirmar cancelación ──
 function confirmCancel() {
-    bootstrap.Modal.getInstance(document.getElementById('cancelModal')).hide();
-    showToast('Suscripción cancelada. Tienes acceso hasta el 27 Abr 2026.', 'warn');
+    const motivoSelect = document.querySelector('#cancelModal select');
+    const motivo = motivoSelect ? motivoSelect.value : '';
+    
+    const formData = new FormData();
+    formData.append('accion', 'cancelar_suscripcion');
+    formData.append('motivo', motivo);
+    
+    fetch('procesar_suscripcion.php', {
+        method: 'POST',
+        body: formData
+    }).then(response => {
+        if (response.redirected) {
+            window.location.href = response.url;
+        }
+    }).catch(() => {
+        showToast('Error al cancelar suscripción', 'error');
+    });
+    
+    const modal = bootstrap.Modal.getInstance(document.getElementById('cancelModal'));
+    if (modal) modal.hide();
+}
+
+// ── Descargar factura ──
+function downloadInvoice(id) {
+    showToast(`Generando factura ${id}...`, 'info');
+    
+    const formData = new FormData();
+    formData.append('accion', 'descargar_factura');
+    formData.append('factura_id', id);
+    
+    fetch('procesar_suscripcion.php', {
+        method: 'POST',
+        body: formData
+    }).then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            window.open(`procesar_suscripcion.php?descargar_factura=${id}`, '_blank');
+            showToast('Descargando factura...', 'success');
+        } else {
+            showToast(data.message, 'error');
+        }
+    }).catch(() => {
+        // Fallback - simular descarga
+        window.open(`procesar_suscripcion.php?descargar_factura=${id}`, '_blank');
+    });
+}
+
+// ── Simular pago (demo) ──
+function simularPago() {
+    if (confirm('¿Simular pago para demostración? Esto generará una factura de prueba.')) {
+        const formData = new FormData();
+        formData.append('accion', 'simular_pago');
+        
+        fetch('procesar_suscripcion.php', {
+            method: 'POST',
+            body: formData
+        }).then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showToast(data.message, 'success');
+                location.reload();
+            } else {
+                showToast(data.message, 'error');
+            }
+        }).catch(() => {
+            showToast('Error al simular pago', 'error');
+        });
+    }
+}
+
+// ── Reactivar suscripción (si está cancelada) ──
+function reactivarSuscripcion() {
+    if (confirm('¿Deseas reactivar tu suscripción?')) {
+        const formData = new FormData();
+        formData.append('accion', 'reactivar_suscripcion');
+        
+        fetch('procesar_suscripcion.php', {
+            method: 'POST',
+            body: formData
+        }).then(response => {
+            if (response.redirected) {
+                window.location.href = response.url;
+            }
+        }).catch(() => {
+            showToast('Error al reactivar suscripción', 'error');
+        });
+    }
 }
 
 // ── Toast ──
 function showToast(msg, type = 'info') {
     const colors = {
-        success: { bg:'#83bf46', icon:'circle-check' },
-        warn:    { bg:'#f0ae2a', icon:'triangle-exclamation' },
-        info:    { bg:'#2cbaec', icon:'circle-info' },
+        success: { bg: '#83bf46', icon: 'circle-check' },
+        warn: { bg: '#f0ae2a', icon: 'triangle-exclamation' },
+        error: { bg: '#ff6b8b', icon: 'circle-exclamation' },
+        info: { bg: '#2cbaec', icon: 'circle-info' },
     };
     const c = colors[type] || colors.info;
     const id = `t${Date.now()}`;
-    document.querySelector('.toast-container').insertAdjacentHTML('beforeend', `
+    const container = document.querySelector('.toast-container');
+    if (!container) return;
+    
+    container.insertAdjacentHTML('beforeend', `
         <div id="${id}" class="toast" role="alert" data-bs-autohide="true" data-bs-delay="3500">
             <div class="toast-header" style="background:${c.bg};color:white;border-radius:13px 13px 0 0;border:none;">
                 <i class="fas fa-${c.icon} me-2"></i>
                 <strong class="me-auto" style="font-size:.82rem;">D&F Mindspace</strong>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
             </div>
-            <div class="toast-body" style="font-size:.84rem;color:#334155;">${msg}</div>
+            <div class="toast-body" style="font-size:.84rem;color:#334155;">${escapeHtml(msg)}</div>
         </div>
     `);
     const el = document.getElementById(id);
-    new bootstrap.Toast(el).show();
-    el.addEventListener('hidden.bs.toast', () => el.remove());
+    if (el) {
+        new bootstrap.Toast(el).show();
+        el.addEventListener('hidden.bs.toast', () => el.remove());
+    }
 }
 
 // ── Estilo para plan seleccionado ──

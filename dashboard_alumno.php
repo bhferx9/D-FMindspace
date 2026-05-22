@@ -11,10 +11,53 @@ if (!isset($_SESSION['user_id']) || $_SESSION['tipo'] != 'alumno') {
 $alumno_id = $_SESSION['user_id'];
 $nombre_alumno = $_SESSION['nombre'];
 
+// ========== CÓDIGO DE VINCULACIÓN PARA PADRES ==========
+$codigo_actual = '';
+try {
+    $stmt_codigo = $conn->pdo->prepare("SELECT codigo_vinculacion FROM usuarios WHERE id = ?");
+    $stmt_codigo->execute([$alumno_id]);
+    $codigo_actual = $stmt_codigo->fetchColumn();
+
+    if (!$codigo_actual) {
+        // Generar código único formato DF-XXXXXX-YYYY
+        do {
+            $part1 = strtoupper(substr(bin2hex(random_bytes(3)), 0, 6));
+            $part2 = rand(1000, 9999);
+            $nuevo = "DF-" . $part1 . "-" . $part2;
+            $check = $conn->pdo->prepare("SELECT id FROM usuarios WHERE codigo_vinculacion = ?");
+            $check->execute([$nuevo]);
+        } while ($check->rowCount() > 0);
+        
+        $update = $conn->pdo->prepare("UPDATE usuarios SET codigo_vinculacion = ? WHERE id = ?");
+        $update->execute([$nuevo, $alumno_id]);
+        $codigo_actual = $nuevo;
+    }
+
+    // Regenerar código si se solicita
+    if (isset($_GET['regenerar']) && $_GET['regenerar'] == 1) {
+        do {
+            $part1 = strtoupper(substr(bin2hex(random_bytes(3)), 0, 6));
+            $part2 = rand(1000, 9999);
+            $nuevo = "DF-" . $part1 . "-" . $part2;
+            $check = $conn->pdo->prepare("SELECT id FROM usuarios WHERE codigo_vinculacion = ?");
+            $check->execute([$nuevo]);
+        } while ($check->rowCount() > 0);
+        
+        $update = $conn->pdo->prepare("UPDATE usuarios SET codigo_vinculacion = ? WHERE id = ?");
+        $update->execute([$nuevo, $alumno_id]);
+        header("Location: dashboard_alumno.php?msg=regenerado");
+        exit();
+    }
+
+    $mensaje_codigo = isset($_GET['msg']) && $_GET['msg'] == 'regenerado' ? 'Código regenerado con éxito' : '';
+} catch (PDOException $e) {
+    $codigo_actual = 'Error al generar código';
+    $mensaje_codigo = '';
+}
 // Consultar cursos en los que está inscrito - USANDO PDO DIRECTAMENTE
 try {
     $stmt = $conn->pdo->prepare("
-        SELECT c.nombre, c.descripcion, i.progreso, i.id_curso, c.nivel 
+        SELECT DISTINCT c.nombre, c.descripcion, i.progreso, i.id_curso, c.nivel 
         FROM inscripciones i 
         JOIN cursos c ON i.id_curso = c.id 
         WHERE i.id_alumno = ? AND i.estado = 'activo'
@@ -179,6 +222,8 @@ if (!$res_cursos) {
 // =============================================
 // FIN CÓDIGO DE DEPURACIÓN
 // =============================================
+
+
 ?>
 
 <!DOCTYPE html>
@@ -1000,6 +1045,14 @@ if (!$res_cursos) {
             0%, 100% { transform: scale(1) rotate(0deg); }
             50% { transform: scale(1.1) rotate(15deg); }
         }
+
+        .codigo-box {
+    transition: all 0.2s ease;
+}
+        .codigo-box:hover {
+            transform: scale(1.01);
+            box-shadow: 0 6px 14px rgba(0,0,0,0.15);
+        }
     </style>
 </head>
 <body>
@@ -1036,7 +1089,35 @@ if (!$res_cursos) {
                 <span class="kid-level">
                     <i class="fas fa-star me-1"></i>Nivel <?php echo $avatares[$avatar_key]['nivel']; ?>
                 </span>
-                
+                <!-- CÓDIGO DE VINCULACIÓN (LLAMATIVO) -->
+<div class="codigo-box mt-3 p-2 text-center" style="background: linear-gradient(135deg, #f0ae2a, #fdcc5c); border-radius: 18px; margin: 0 10px 10px 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
+    <small class="text-white fw-bold"><i class="fas fa-link"></i> Código para tus padres</small>
+    <div class="fw-bold font-monospace bg-white rounded p-2 mt-1" style="font-size: 0.85rem; letter-spacing: 1px; word-break: break-all;" id="codigoVinculacionSidebar">
+        <?php echo htmlspecialchars($codigo_actual); ?>
+    </div>
+    <div class="mt-2 d-flex gap-2 justify-content-center">
+        <button class="btn btn-sm btn-light" onclick="copiarCodigoSidebar()" style="font-size: 0.7rem; font-weight: bold;">
+            <i class="fas fa-copy"></i> Copiar
+        </button>
+        <a href="?regenerar=1" class="btn btn-sm btn-light" onclick="return confirm('¿Regenerar código? El anterior dejará de funcionar.')" style="font-size: 0.7rem; font-weight: bold;">
+            <i class="fas fa-sync-alt"></i> Regenerar
+        </a>
+    </div>
+    <?php if ($mensaje_codigo): ?>
+        <div class="alert alert-success mt-2 py-1 px-2 mb-0" style="font-size: 0.7rem;"><?php echo $mensaje_codigo; ?></div>
+    <?php endif; ?>
+</div>
+
+<script>
+function copiarCodigoSidebar() {
+    var codigo = document.getElementById('codigoVinculacionSidebar').innerText;
+    navigator.clipboard.writeText(codigo).then(function() {
+        alert('✅ Código copiado al portapapeles. Compártelo con tus padres.');
+    }).catch(function() {
+        alert('❌ No se pudo copiar automáticamente. Cópialo manualmente.');
+    });
+}
+</script>
                 <!-- Puntos -->
                 <!-- <div class="points-container" style="text-align: center; padding: 15px; background: linear-gradient(135deg, rgba(255, 107, 139, 0.1), rgba(255, 107, 139, 0.05)); border-radius: 15px; margin: 15px;">
                     <div class="points-value" style="font-size: 2rem; font-family: 'Fredoka One', cursive; color: var(--danger); margin: 5px 0;"><?php echo $puntos_alumno; ?></div>

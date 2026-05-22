@@ -35,6 +35,54 @@ if (count($partes) >= 2) {
     $iniciales = strtoupper(substr($nombre_padre, 0, 2));
 }
 
+// Mapeo de avatares (igual que en dashboard_alumno.php)
+$avatares = [
+    'panda' => ['emoji' => '🐼', 'color' => '#3A506B', 'nivel' => 1],
+    'zorro' => ['emoji' => '🦊', 'color' => '#E67E22', 'nivel' => 1],
+    'dragon' => ['emoji' => '🐉', 'color' => '#FF6B6B', 'nivel' => 1],
+    'leon' => ['emoji' => '🦁', 'color' => '#FFD93D', 'nivel' => 2],
+    'dino' => ['emoji' => '🦖', 'color' => '#6BCF7F', 'nivel' => 1],
+    'robot' => ['emoji' => '🤖', 'color' => '#4D96FF', 'nivel' => 3],
+    'astronauta' => ['emoji' => '👨‍🚀', 'color' => '#845EC2', 'nivel' => 4],
+    'superheroe' => ['emoji' => '🦸‍♂️', 'color' => '#FF6B8B', 'nivel' => 5],
+    'mago' => ['emoji' => '🧙‍♂️', 'color' => '#00C2A8', 'nivel' => 6],
+    'ninja' => ['emoji' => '🥷', 'color' => '#4A4A4A', 'nivel' => 3],
+    'fenix' => ['emoji' => '🔥', 'color' => '#FF4500', 'nivel' => 7],
+    'unicornio' => ['emoji' => '🦄', 'color' => '#D65DB1', 'nivel' => 8],
+    'ballena' => ['emoji' => '🐋', 'color' => '#4169E1', 'nivel' => 3],
+    'aguila' => ['emoji' => '🦅', 'color' => '#DAA520', 'nivel' => 3],
+    'lobo' => ['emoji' => '🐺', 'color' => '#708090', 'nivel' => 3],
+    'pinguino' => ['emoji' => '🐧', 'color' => '#1C2833', 'nivel' => 2],
+    'bufalo' => ['emoji' => '🦬', 'color' => '#8B4513', 'nivel' => 2],
+    'conejo' => ['emoji' => '🐰', 'color' => '#F4A460', 'nivel' => 1],
+    'gato' => ['emoji' => '🐱', 'color' => '#FFA07A', 'nivel' => 1],
+    'perro' => ['emoji' => '🐶', 'color' => '#DEB887', 'nivel' => 1],
+    'raton' => ['emoji' => '🐭', 'color' => '#B0C4DE', 'nivel' => 1],
+    'abeja' => ['emoji' => '🐝', 'color' => '#FFD700', 'nivel' => 2],
+    'pulpo' => ['emoji' => '🐙', 'color' => '#CD5C5C', 'nivel' => 2],
+    'robot_avanzado' => ['emoji' => '🤖', 'color' => '#2E86AB', 'nivel' => 5],
+    'titan' => ['emoji' => '🏛️', 'color' => '#8B0000', 'nivel' => 4],
+    'centauro' => ['emoji' => '🏹', 'color' => '#CD853F', 'nivel' => 4],
+    'ciborg' => ['emoji' => '🦾', 'color' => '#4682B4', 'nivel' => 5],
+    'kraken' => ['emoji' => '🐙', 'color' => '#2F4F4F', 'nivel' => 5],
+    'valquiria' => ['emoji' => '⚔️', 'color' => '#C0C0C0', 'nivel' => 5],
+    'dios_ra' => ['emoji' => '☀️', 'color' => '#FFD700', 'nivel' => 6],
+    'leviathan' => ['emoji' => '🐉', 'color' => '#1a237e', 'nivel' => 6],
+    'thor' => ['emoji' => '🔨', 'color' => '#5DADE2', 'nivel' => 6],
+    'cerbero' => ['emoji' => '🐕‍🦺', 'color' => '#8B4513', 'nivel' => 6],
+    'zeus' => ['emoji' => '⚡', 'color' => '#FFD700', 'nivel' => 7]
+];
+
+function getAvatarEmoji($avatar_key) {
+    global $avatares;
+    return isset($avatares[$avatar_key]) ? $avatares[$avatar_key]['emoji'] : '🧒';
+}
+
+function getAvatarColor($avatar_key) {
+    global $avatares;
+    return isset($avatares[$avatar_key]) ? $avatares[$avatar_key]['color'] : '#3A506B';
+}
+
 // Obtener ID del hijo desde GET y verificar vinculación
 $id_hijo = isset($_GET['hijo']) ? intval($_GET['hijo']) : 0;
 if ($id_hijo <= 0) {
@@ -76,15 +124,9 @@ if (!$hijo) {
 $fecha_nac = $hijo['fecha_nacimiento'];
 $edad = date_diff(date_create($fecha_nac), date_create('today'))->y;
 
-// Emoji según avatar
-function getAvatarEmoji($avatar) {
-    $emojis = [
-        'panda' => '🐼', 'dragon' => '🐉', 'leon' => '🦁',
-        'buho' => '🦉', 'zorro' => '🦊', 'gato' => '🐱'
-    ];
-    return $emojis[$avatar] ?? '🧒';
-}
+// Emoji y color según avatar del hijo
 $emoji_hijo = getAvatarEmoji($hijo['avatar']);
+$avatar_color_hijo = getAvatarColor($hijo['avatar']);
 
 // --- ESTADÍSTICAS GENERALES ---
 // Promedio general (de todas las evaluaciones)
@@ -129,8 +171,6 @@ try {
     $total_actividades = 0;
 }
 
-// Racha de días (simulado)
-$racha_dias = 5;
 
 // Tiempo total de estudio esta semana (PostgreSQL)
 try {
@@ -154,13 +194,184 @@ $tiempo_total = ($horas ? $horas.'h ' : '') . $minutos.'m';
 // Promedio diario (minutos)
 $promedio_min_diarios = $tiempo_seg ? round(($tiempo_seg / 60) / 7) : 0;
 
-// --- LOGROS (simulado) ---
-$logros = [
-    ['icono' => '🏆', 'nombre' => 'Primera semana perfecta', 'fecha' => '10 mar 2026'],
-    ['icono' => '⚡', 'nombre' => 'Racha de 5 días', 'fecha' => '18 mar 2026'],
-    ['icono' => '🎯', 'nombre' => '10 actividades completadas', 'fecha' => '22 mar 2026'],
-    ['icono' => '📚', 'nombre' => 'Lectora dedicada', 'fecha' => '25 mar 2026']
-];
+// =============================================
+// LOGROS REALES (calculados dinámicamente)
+// =============================================
+
+// 1. Obtener estadísticas reales del alumno
+try {
+    // Total de entregas completadas (calificadas)
+    $stmt_total_entregas = $conn->pdo->prepare("
+        SELECT COUNT(*) as total 
+        FROM entregas 
+        WHERE id_alumno = ? AND estado = 'calificado'
+    ");
+    $stmt_total_entregas->execute([$id_hijo]);
+    $total_entregas = $stmt_total_entregas->fetch(PDO::FETCH_ASSOC)['total'];
+    
+    // Primera entrega (fecha)
+    $stmt_primera = $conn->pdo->prepare("
+        SELECT MIN(fecha_entrega) as primera_fecha 
+        FROM entregas 
+        WHERE id_alumno = ?
+    ");
+    $stmt_primera->execute([$id_hijo]);
+    $primera_entrega = $stmt_primera->fetch(PDO::FETCH_ASSOC);
+    
+} catch(PDOException $e) {
+    $total_entregas = 0;
+    $primera_entrega = null;
+}
+
+// 2. Calcular racha de días REAL (basada en entregas por día)
+try {
+    $stmt_racha = $conn->pdo->prepare("
+        SELECT DISTINCT DATE(fecha_entrega) as fecha
+        FROM entregas
+        WHERE id_alumno = ?
+        ORDER BY fecha DESC
+    ");
+    $stmt_racha->execute([$id_hijo]);
+    $fechas_entregas = $stmt_racha->fetchAll(PDO::FETCH_COLUMN);
+    
+    $racha_dias = 0;
+    if (!empty($fechas_entregas)) {
+        $hoy = date('Y-m-d');
+        $ayer = date('Y-m-d', strtotime('-1 day'));
+        
+        if (in_array($hoy, $fechas_entregas) || in_array($ayer, $fechas_entregas)) {
+            $fecha_actual = new DateTime();
+            if (!in_array($hoy, $fechas_entregas)) {
+                $fecha_actual->modify('-1 day');
+            }
+            
+            for ($i = 0; $i <= 60; $i++) {
+                $fecha_buscar = $fecha_actual->format('Y-m-d');
+                if (in_array($fecha_buscar, $fechas_entregas)) {
+                    $racha_dias++;
+                    $fecha_actual->modify('-1 day');
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+} catch(PDOException $e) {
+    $racha_dias = 0;
+}
+
+// 3. Construir array de logros REALES basados en datos
+$logros = [];
+
+// Logro 1: Primera entrega
+if ($total_entregas >= 1 && $primera_entrega && $primera_entrega['primera_fecha']) {
+    $logros[] = [
+        'icono' => '🎯',
+        'nombre' => 'Primer paso completado',
+        'fecha' => date('d M Y', strtotime($primera_entrega['primera_fecha'])),
+        'descripcion' => 'Primera actividad entregada'
+    ];
+}
+
+// Logro 2: 5 entregas completadas
+if ($total_entregas >= 5) {
+    $logros[] = [
+        'icono' => '🔍',
+        'nombre' => 'Explorador principiante',
+        'fecha' => date('d M Y'),
+        'descripcion' => '5 actividades completadas'
+    ];
+}
+
+// Logro 3: 10 entregas completadas
+if ($total_entregas >= 10) {
+    $logros[] = [
+        'icono' => '🧭',
+        'nombre' => 'Aventurero',
+        'fecha' => date('d M Y'),
+        'descripcion' => '10 actividades completadas'
+    ];
+}
+
+// Logro 4: 20 entregas completadas
+if ($total_entregas >= 20) {
+    $logros[] = [
+        'icono' => '🏆',
+        'nombre' => 'Maestro del conocimiento',
+        'fecha' => date('d M Y'),
+        'descripcion' => '20 actividades completadas'
+    ];
+}
+
+// Logro 5: Excelencia académica (promedio >= 8.5)
+if ($promedio_general >= 8.5) {
+    $logros[] = [
+        'icono' => '⭐',
+        'nombre' => 'Excelencia académica',
+        'fecha' => date('d M Y'),
+        'descripcion' => 'Promedio general superior a 8.5'
+    ];
+}
+
+// Logro 6: Promedio perfecto
+if ($promedio_general == 10 && $total_entregas >= 3) {
+    $logros[] = [
+        'icono' => '🌟',
+        'nombre' => '¡Perfecto!',
+        'fecha' => date('d M Y'),
+        'descripcion' => 'Calificación perfecta en todas las actividades'
+    ];
+}
+
+// Logro 7: Racha de 5 días
+if ($racha_dias >= 5) {
+    $logros[] = [
+        'icono' => '⚡',
+        'nombre' => 'Racha de ' . min(5, floor($racha_dias/5)*5) . ' días',
+        'fecha' => date('d M Y'),
+        'descripcion' => $racha_dias . ' días consecutivos de actividad'
+    ];
+}
+
+// Logro 8: Racha de 10 días
+if ($racha_dias >= 10) {
+    $logros[] = [
+        'icono' => '🔥',
+        'nombre' => 'Racha de ' . min(10, floor($racha_dias/10)*10) . ' días',
+        'fecha' => date('d M Y'),
+        'descripcion' => $racha_dias . ' días consecutivos de actividad'
+    ];
+}
+
+// Logro 9: Primer curso completado
+try {
+    $stmt_curso_completo = $conn->pdo->prepare("
+        SELECT c.nombre, i.progreso
+        FROM inscripciones i
+        JOIN cursos c ON i.id_curso = c.id
+        WHERE i.id_alumno = ? AND i.progreso = 100 AND i.estado = 'activo'
+        LIMIT 1
+    ");
+    $stmt_curso_completo->execute([$id_hijo]);
+    $curso_completo = $stmt_curso_completo->fetch(PDO::FETCH_ASSOC);
+    
+    if ($curso_completo) {
+        $logros[] = [
+            'icono' => '🎓',
+            'nombre' => '¡Curso completado!',
+            'fecha' => date('d M Y'),
+            'descripcion' => 'Completaste el curso: ' . htmlspecialchars($curso_completo['nombre'])
+        ];
+    }
+} catch(PDOException $e) {
+    // No hacer nada
+}
+
+// Limitar a máximo 6 logros y ordenar por fecha (los más recientes primero)
+usort($logros, function($a, $b) {
+    return strtotime($b['fecha']) - strtotime($a['fecha']);
+});
+$logros = array_slice($logros, 0, 6);
 
 // --- RETROALIMENTACIÓN DE DOCENTES ---
 try {
@@ -409,7 +620,7 @@ $colores = ['#2cbaec', '#83bf46', '#f0ae2a', '#a78bfa', '#fb7185'];
  
         .hero-avatar {
             width:72px; height:72px; border-radius:22px;
-            background: linear-gradient(135deg, rgba(44,186,236,.12), rgba(240,174,42,.1));
+            background: <?= $avatar_color_hijo ?>;
             display:flex; align-items:center; justify-content:center;
             font-size:2.4rem; flex-shrink:0;
             border: 2px solid rgba(44,186,236,.12);
@@ -785,7 +996,7 @@ $colores = ['#2cbaec', '#83bf46', '#f0ae2a', '#a78bfa', '#fb7185'];
         <span class="current"><?= htmlspecialchars($hijo['nombre']) ?></span>
     </div>
 
-    <!-- HERO HEADER -->
+    <!-- HERO HEADER (con avatar del hijo) -->
     <div class="student-hero fade-up" style="animation-delay:.06s">
         <div class="hero-left">
             <div class="hero-avatar"><?= $emoji_hijo ?></div>
@@ -1020,7 +1231,7 @@ $colores = ['#2cbaec', '#83bf46', '#f0ae2a', '#a78bfa', '#fb7185'];
 
 </main>
 
-<!-- PDF Modal (exactamente igual al HTML original) -->
+<!-- PDF Modal -->
 <div class="modal fade" id="pdfModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
@@ -1219,20 +1430,141 @@ $colores = ['#2cbaec', '#83bf46', '#f0ae2a', '#a78bfa', '#fb7185'];
         ta.value = '';
     }
 
-    /* ── PDF Modal ── */
     function generatePDF() {
-        new bootstrap.Modal(document.getElementById('pdfModal')).show();
-    }
+    // Cerrar el modal si está abierto
+    const modal = bootstrap.Modal.getInstance(document.getElementById('pdfModal'));
+    if (modal) modal.hide();
+    
+    // Pequeño retraso para que se cierre el modal
+    setTimeout(() => {
+        // Abrir la ventana de impresión del navegador
+        window.print();
+    }, 200);
+}
 
-    function selectPeriod(btn) {
-        document.querySelectorAll('.pdf-period-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-    }
+// Función para añadir estilos específicos para la impresión
+function addPrintStyles() {
+    const style = document.createElement('style');
+    style.id = 'print-styles';
+    style.textContent = `
+        @media print {
+            /* Ocultar elementos que no deben imprimirse */
+            .sidebar,
+            .menu-toggle,
+            .btn-pdf,
+            .btn-close,
+            .modal,
+            .modal-backdrop,
+            .toast-container,
+            .period-tabs,
+            .reply-box,
+            .btn-send,
+            .reply-textarea,
+            .reply-label,
+            .reply-select,
+            .fb-avatar,
+            .unread-dot,
+            .feedback-item .fb-avatar,
+            .feedback-thread .reply-label,
+            .feedback-thread .reply-textarea,
+            .feedback-thread .reply-footer,
+            button,
+            .btn,
+            .modal-footer button,
+            .btn-light,
+            .btn-pdf {
+                display: none !important;
+            }
+            
+            /* Mostrar todo el contenido principal */
+            .main {
+                margin: 0 !important;
+                padding: 0 !important;
+                width: 100% !important;
+            }
+            
+            /* Asegurar que los paneles se vean bien */
+            .panel,
+            .student-hero,
+            .sum-card,
+            .achievement,
+            .subject-row {
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+            
+            /* Ajustes de color para impresión */
+            .student-hero,
+            .panel,
+            .sum-card {
+                background: white !important;
+                border: 1px solid #ddd !important;
+                box-shadow: none !important;
+            }
+            
+            .hero-avatar {
+                background: #f0f0f0 !important;
+                border: 1px solid #ccc !important;
+            }
+            
+            /* Eliminar gradientes */
+            .btn-pdf,
+            .btn-send,
+            .brand-icon,
+            .user-avatar {
+                background: #2cbaec !important;
+            }
+            
+            /* Asegurar que los textos sean legibles */
+            body {
+                color: black !important;
+                background: white !important;
+            }
+            
+            /* Mostrar URLs después de los enlaces (opcional) */
+            a[href]:after {
+                content: " (" attr(href) ")";
+                font-size: 0.8em;
+                color: #666;
+            }
+            
+            /* Ajustar márgenes de página */
+            @page {
+                margin: 1.5cm;
+                size: A4;
+            }
+            
+            /* Evitar que los elementos flotantes se corten */
+            .content-cols {
+                display: block !important;
+            }
+            
+            .chart-panel,
+            .fade-up {
+                width: 100% !important;
+            }
+            
+            /* Asegurar que las tablas se vean bien */
+            table {
+                width: 100%;
+                border-collapse: collapse;
+            }
+            
+            th, td {
+                border: 1px solid #ddd;
+                padding: 8px;
+            }
+            
+            th {
+                background: #f0f0f0 !important;
+            }
+        }
+    `;
+    document.head.appendChild(style);
+}
 
-    function downloadPDF() {
-        bootstrap.Modal.getInstance(document.getElementById('pdfModal')).hide();
-        showToast('Generando reporte PDF… se descargará en unos segundos', 'info');
-    }
+// Llamar a la función cuando el documento esté listo
+document.addEventListener('DOMContentLoaded', addPrintStyles);
 
     /* ── Toast ── */
     function showToast(msg, type = 'info') {
