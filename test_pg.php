@@ -1,6 +1,6 @@
 <?php
 // Configuración de tu VM
-$host = '192.168.0.9';  // CAMBIA por la IP real de tu VM
+$host = '172.16.17.163';  // CAMBIA por la IP real de tu VM
 $port = '5432';
 $dbname = 'df_mindspace';
 $user = 'admin_user';
