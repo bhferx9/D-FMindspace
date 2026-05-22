@@ -1,5 +1,6 @@
 <?php
 include 'php/config.php';
+include 'php/sendgrid_notificaciones.php';
 session_start();
 
 // Verificar que el usuario sea tutor
@@ -25,7 +26,8 @@ $errores = [];
 try {
     // Verificar que la entrega exista y pertenezca a un curso del tutor
     $stmt_check = $conn->pdo->prepare("
-        SELECT e.*, a.puntos as puntos_maximos, a.id_curso
+        SELECT e.*, a.puntos as puntos_maximos, a.id_curso, a.titulo as actividad_nombre,
+               c.nombre as curso_nombre, e.id_alumno
         FROM entregas e
         JOIN actividades a ON e.id_actividad = a.id
         JOIN cursos c ON a.id_curso = c.id
@@ -39,6 +41,7 @@ try {
         $entrega = $stmt_check->fetch(PDO::FETCH_ASSOC);
         $puntos_maximos = $entrega['puntos_maximos'];
         $id_curso = $entrega['id_curso'];
+        $id_alumno = $entrega['id_alumno'];
         
         // Validar calificación
         if ($calificacion < 0 || $calificacion > $puntos_maximos) {
@@ -87,7 +90,7 @@ try {
             // C. Calcular porcentaje
             $nuevo_porcentaje = ($total_actividades > 0) ? round(($actividades_hechas / $total_actividades) * 100) : 0;
             
-            // D. Actualizar tabla 'progreso' (CORREGIDO para PostgreSQL)
+            // D. Actualizar tabla 'progreso' (PostgreSQL)
             $stmt_progreso = $conn->pdo->prepare("
                 INSERT INTO progreso (id_alumno, id_curso, porcentaje, actividades_completadas, fecha_actualizacion)
                 VALUES (:id_alumno, :id_curso, :porcentaje, :completadas, CURRENT_TIMESTAMP)
@@ -118,8 +121,28 @@ try {
             // Confirmar transacción
             $conn->pdo->commit();
             
+            // ─────────────────────────────────────────────────────────
+            // NOTIFICAR AL ALUMNO QUE SU TAREA FUE CALIFICADA
+            // ─────────────────────────────────────────────────────────
+            $stmt_alumno = $conn->pdo->prepare("SELECT nombre, email FROM usuarios WHERE id = :id");
+            $stmt_alumno->execute([':id' => $id_alumno]);
+            $alumno = $stmt_alumno->fetch(PDO::FETCH_ASSOC);
+            
+            if ($alumno && !empty($alumno['email'])) {
+                notificar_alumno_calificacion(
+                    $alumno['email'],
+                    $alumno['nombre'],
+                    $entrega['actividad_nombre'],
+                    $entrega['curso_nombre'],
+                    $calificacion,
+                    $puntos_maximos,
+                    $comentarios
+                );
+            }
+            // ─────────────────────────────────────────────────────────
+            
             echo "<script>
-                    alert('✅ Tarea calificada y progreso actualizado al " . $nuevo_porcentaje . "%');
+                    alert('✅ Tarea calificada exitosamente.\\nProgreso actualizado al " . $nuevo_porcentaje . "%');
                     window.location='revisar_entregas.php';
                   </script>";
             exit();

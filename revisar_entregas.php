@@ -1,5 +1,6 @@
 <?php
 include 'php/config.php';
+include 'php/sendgrid_notificaciones.php';
 session_start();
 
 if (!isset($_SESSION['user_id']) || $_SESSION['tipo'] != 'tutor') {
@@ -10,100 +11,60 @@ if (!isset($_SESSION['user_id']) || $_SESSION['tipo'] != 'tutor') {
 $tutor_id = $_SESSION['user_id'];
 $tutor_nombre = $_SESSION['nombre'];
 
-// Consultar entregas pendientes con más información
-// Consultar entregas pendientes con más información - CORREGIDO PARA POSTGRESQL
-$sql = "SELECT e.id as entrega_id, 
-               u.nombre as alumno_nombre, 
-               u.email as alumno_email,
-               a.titulo as actividad_nombre,
-               a.tipo as actividad_tipo,
-               a.dificultad as actividad_dificultad,
-               c.nombre as curso_nombre,
-               c.id as curso_id,
-               e.id_alumno,
-               e.fecha_entrega,
-               e.archivo as archivo_adjunto,
-               e.respuesta as comentario_alumno,
-               ev.calificacion,
-               EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - e.fecha_entrega))/3600 as horas_pasadas,
-               COUNT(e2.id) as intentos_totales
-        FROM entregas e
-        JOIN usuarios u ON e.id_alumno = u.id
-        JOIN actividades a ON e.id_actividad = a.id
-        JOIN cursos c ON a.id_curso = c.id
-        LEFT JOIN evaluaciones ev ON e.id = ev.id_entrega
-        LEFT JOIN entregas e2 ON e.id_alumno = e2.id_alumno AND e.id_actividad = e2.id_actividad
-        WHERE c.id_tutor = '$tutor_id' 
-        AND e.estado = 'pendiente'
-        GROUP BY e.id, u.nombre, u.email, a.titulo, a.tipo, a.dificultad, c.nombre, c.id, e.id_alumno, e.fecha_entrega, e.archivo, e.respuesta, ev.calificacion
-        ORDER BY 
-            CASE 
-                WHEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - e.fecha_entrega))/3600 > 48 THEN 1
-                WHEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - e.fecha_entrega))/3600 > 24 THEN 2
-                ELSE 3
-            END,
-            e.fecha_entrega ASC";
-
-$res = mysqli_query($conn, $sql);
-
-// Contadores para estadísticas
-$total_pendientes = 0;
-$urgentes = 0;
-$recientes = 0;
-$entregas = [];
-
-if ($res) {
-    $total_pendientes = mysqli_num_rows($res);
-    $entregas = [];
-    while ($row = mysqli_fetch_assoc($res)) {
-        $entregas[] = $row;
-        if ($row['horas_pasadas'] > 48) $urgentes++;
-        if ($row['horas_pasadas'] < 24) $recientes++;
-    }
-    mysqli_data_seek($res, 0);
-}
-$res = mysqli_query($conn, $sql);
-
-// =============================================
-// CÓDIGO DE DEPURACIÓN - ELIMINAR DESPUÉS
-// =============================================
-if (!$res) {
-    echo "Error en la consulta: " . mysqli_error($conn);
-    exit();
-} else {
-    $num_rows = mysqli_num_rows($res);
-    echo "<!-- Debug: La consulta devolvió $num_rows filas -->";
+try {
+    // Consultar entregas pendientes usando PDO
+    $sql = "SELECT e.id as entrega_id, 
+                   u.nombre as alumno_nombre, 
+                   u.email as alumno_email,
+                   a.titulo as actividad_nombre,
+                   a.tipo as actividad_tipo,
+                   a.dificultad as actividad_dificultad,
+                   c.nombre as curso_nombre,
+                   c.id as curso_id,
+                   e.id_alumno,
+                   e.fecha_entrega,
+                   e.archivo as archivo_adjunto,
+                   e.respuesta as comentario_alumno,
+                   ev.calificacion,
+                   EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - e.fecha_entrega))/3600 as horas_pasadas,
+                   (SELECT COUNT(*) FROM entregas e2 WHERE e2.id_alumno = e.id_alumno AND e2.id_actividad = e.id_actividad) as intentos_totales
+            FROM entregas e
+            JOIN usuarios u ON e.id_alumno = u.id
+            JOIN actividades a ON e.id_actividad = a.id
+            JOIN cursos c ON a.id_curso = c.id
+            LEFT JOIN evaluaciones ev ON e.id = ev.id_entrega
+            WHERE c.id_tutor = :tutor_id 
+            AND e.estado = 'pendiente'
+            ORDER BY 
+                CASE 
+                    WHEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - e.fecha_entrega))/3600 > 48 THEN 1
+                    WHEN EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - e.fecha_entrega))/3600 > 24 THEN 2
+                    ELSE 3
+                END,
+                e.fecha_entrega ASC";
     
-    // Verificar si hay resultados
-    if ($num_rows == 0) {
-        echo "<div class='alert alert-warning'>No hay entregas pendientes. Verifica que existan entregas con estado 'pendiente' para el tutor ID: $tutor_id</div>";
-        
-        // Consulta para verificar si hay entregas en general
-        $sql_check = "SELECT COUNT(*) as total FROM entregas e 
-                      JOIN actividades a ON e.id_actividad = a.id 
-                      JOIN cursos c ON a.id_curso = c.id 
-                      WHERE c.id_tutor = '$tutor_id'";
-        $res_check = mysqli_query($conn, $sql_check);
-        if ($res_check) {
-            $row_check = mysqli_fetch_assoc($res_check);
-            echo "<!-- Debug: Total de entregas para este tutor: " . $row_check['total'] . " -->";
-        }
-        
-        // Verificar entregas con estado pendiente
-        $sql_check2 = "SELECT COUNT(*) as total FROM entregas e 
-                       JOIN actividades a ON e.id_actividad = a.id 
-                       JOIN cursos c ON a.id_curso = c.id 
-                       WHERE c.id_tutor = '$tutor_id' AND e.estado = 'pendiente'";
-        $res_check2 = mysqli_query($conn, $sql_check2);
-        if ($res_check2) {
-            $row_check2 = mysqli_fetch_assoc($res_check2);
-            echo "<!-- Debug: Entregas pendientes para este tutor: " . $row_check2['total'] . " -->";
-        }
+    $stmt = $conn->pdo->prepare($sql);
+    $stmt->execute([':tutor_id' => $tutor_id]);
+    $entregas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Contadores para estadísticas
+    $total_pendientes = count($entregas);
+    $urgentes = 0;
+    $recientes = 0;
+    
+    foreach ($entregas as $entrega) {
+        $horas = $entrega['horas_pasadas'];
+        if ($horas > 48) $urgentes++;
+        if ($horas < 24) $recientes++;
     }
+    
+} catch(PDOException $e) {
+    $error_msg = "Error al cargar las entregas: " . $e->getMessage();
+    $entregas = [];
+    $total_pendientes = 0;
+    $urgentes = 0;
+    $recientes = 0;
 }
-// =============================================
-// FIN CÓDIGO DE DEPURACIÓN
-// =============================================
 
 // Función para obtener color según urgencia
 function getUrgenciaColor($horas) {
@@ -111,6 +72,16 @@ function getUrgenciaColor($horas) {
     if ($horas > 48) return 'warning';
     if ($horas > 24) return 'info';
     return 'success';
+}
+
+// Función para obtener color de dificultad
+function getDificultadColor($dificultad) {
+    $colores = [
+        'Fácil' => 'success',
+        'Normal' => 'info',
+        'Difícil' => 'danger'
+    ];
+    return $colores[$dificultad] ?? 'secondary';
 }
 
 // Función para obtener icono según tipo de actividad
@@ -124,30 +95,6 @@ function getActividadIcono($tipo) {
         'Examen' => 'fas fa-file-alt'
     ];
     return $iconos[$tipo] ?? 'fas fa-tasks';
-}
-
-// Función para obtener color de dificultad
-function getDificultadColor($dificultad) {
-    $colores = [
-        'Fácil' => 'success',
-        'Normal' => 'info',
-        'Difícil' => 'danger'
-    ];
-    return $colores[$dificultad] ?? 'secondary';
-}
-
-// Contar actividades totales por curso para estadísticas
-$sql_estadisticas = "SELECT c.id, c.nombre, COUNT(a.id) as total_actividades
-                    FROM cursos c
-                    LEFT JOIN actividades a ON c.id = a.id_curso
-                    WHERE c.id_tutor = '$tutor_id'
-                    GROUP BY c.id";
-$res_estadisticas = mysqli_query($conn, $sql_estadisticas);
-$cursos_estadisticas = [];
-if ($res_estadisticas) {
-    while($row = mysqli_fetch_assoc($res_estadisticas)) {
-        $cursos_estadisticas[$row['id']] = $row;
-    }
 }
 ?>
 
@@ -770,9 +717,13 @@ if ($res_estadisticas) {
             </div>
         </div>
         
-        <!-- Lista de entregas -->
-        <?php if(mysqli_num_rows($res) > 0): ?>
-            <?php while($row = mysqli_fetch_assoc($res)): 
+        <!-- Lista de entregas (AHORA CON PDO) -->
+        <?php if (isset($error_msg)): ?>
+            <div class="alert alert-danger"><?php echo $error_msg; ?></div>
+        <?php endif; ?>
+        
+        <?php if ($total_pendientes > 0): ?>
+            <?php foreach($entregas as $row): 
                 $horas_pasadas = $row['horas_pasadas'];
                 $urgencia_class = getUrgenciaColor($horas_pasadas);
                 $urgencia_text = '';
@@ -804,7 +755,7 @@ if ($res_estadisticas) {
                             
                             <div class="activity-info">
                                 <span class="activity-type">
-                                    <i class="<?php echo str_replace('fas fa-', '', $actividad_icono); ?> me-2"></i>
+                                    <i class="<?php echo $actividad_icono; ?> me-2"></i>
                                     <?php echo htmlspecialchars($row['actividad_tipo']); ?>
                                 </span>
                                 <span class="activity-difficulty difficulty-<?php echo strtolower($row['actividad_dificultad'] ?? 'normal'); ?>">
@@ -840,8 +791,7 @@ if ($res_estadisticas) {
                             <?php if(!empty($row['archivo_adjunto'])): ?>
                                 <a href="uploads/<?php echo htmlspecialchars($row['archivo_adjunto']); ?>" 
                                    class="file-indicator" 
-                                   target="_blank"
-                                   onclick="trackFileView(<?php echo $row['entrega_id']; ?>)">
+                                   target="_blank">
                                     <i class="fas fa-paperclip text-primary fa-lg"></i>
                                     <div>
                                         <strong>Archivo adjunto</strong>
@@ -863,7 +813,7 @@ if ($res_estadisticas) {
                                 </div>
                                 <span class="badge-custom badge-<?php echo $urgencia_class; ?>">
                                     <i class="fas fa-<?php echo $urgencia_class == 'danger' ? 'fire' : ($urgencia_class == 'warning' ? 'exclamation-triangle' : 'clock'); ?>"></i>
-                                    <?php echo $urgencia_text; ?> (<?php echo $horas_pasadas; ?>h)
+                                    <?php echo $urgencia_text; ?> (<?php echo round($horas_pasadas); ?>h)
                                 </span>
                             </div>
                         </div>
@@ -882,7 +832,7 @@ if ($res_estadisticas) {
                                     <i class="fas fa-star"></i> Calificar Tarea
                                 </a>
                                 
-                                <a href="ver_historial.php?alumno=<?php echo $row['id_alumno'] ?? ''; ?>&curso=<?php echo $row['id_curso'] ?? ''; ?>" 
+                                <a href="ver_historial.php?alumno=<?php echo $row['id_alumno'] ?? ''; ?>&curso=<?php echo $row['curso_id'] ?? ''; ?>" 
                                    class="btn-preview">
                                     <i class="fas fa-history"></i> Ver Historial
                                 </a>
@@ -890,7 +840,7 @@ if ($res_estadisticas) {
                         </div>
                     </div>
                 </div>
-            <?php endwhile; ?>
+            <?php endforeach; ?>
         <?php else: ?>
             <div class="no-deliveries animate__animated animate__fadeIn">
                 <div class="no-deliveries-icon">
@@ -918,30 +868,26 @@ if ($res_estadisticas) {
         // Crear partículas flotantes
         function crearParticulas() {
             const container = document.getElementById('particles');
-            for (let i = 0; i < 30; i++) {
-                const particle = document.createElement('div');
-                particle.className = 'particle';
-                particle.style.left = Math.random() * 100 + '%';
-                particle.style.top = Math.random() * 100 + '%';
-                particle.style.background = Math.random() > 0.5 ? 'var(--primary)' : 'var(--secondary)';
-                particle.style.width = Math.random() * 4 + 2 + 'px';
-                particle.style.height = particle.style.width;
-                particle.style.opacity = Math.random() * 0.3 + 0.1;
-                particle.style.animationDelay = Math.random() * 20 + 's';
-                particle.style.animationDuration = Math.random() * 10 + 15 + 's';
-                container.appendChild(particle);
+            if (container) {
+                for (let i = 0; i < 30; i++) {
+                    const particle = document.createElement('div');
+                    particle.className = 'particle';
+                    particle.style.left = Math.random() * 100 + '%';
+                    particle.style.top = Math.random() * 100 + '%';
+                    particle.style.background = Math.random() > 0.5 ? 'var(--primary)' : 'var(--secondary)';
+                    particle.style.width = Math.random() * 4 + 2 + 'px';
+                    particle.style.height = particle.style.width;
+                    particle.style.opacity = Math.random() * 0.3 + 0.1;
+                    particle.style.animationDelay = Math.random() * 20 + 's';
+                    particle.style.animationDuration = Math.random() * 10 + 15 + 's';
+                    container.appendChild(particle);
+                }
             }
         }
         
         // Inicializar
         document.addEventListener('DOMContentLoaded', function() {
             crearParticulas();
-            
-            // Agregar animación a las tarjetas urgentes
-            const urgentCards = document.querySelectorAll('.delivery-card.danger, .delivery-card.warning');
-            urgentCards.forEach((card, index) => {
-                card.style.animationDelay = `${index * 0.1}s`;
-            });
             
             // Mostrar notificación si hay tareas urgentes
             const urgentCount = <?php echo $urgentes; ?>;
@@ -982,9 +928,7 @@ if ($res_estadisticas) {
         
         // Función para configurar filtros por curso
         function setupCourseFilters() {
-            const filterContainer = document.querySelector('.review-container');
             const deliveries = document.querySelectorAll('.delivery-card');
-            
             if (deliveries.length === 0) return;
             
             // Crear contenedor de filtros
@@ -1004,14 +948,14 @@ if ($res_estadisticas) {
             
             // Insertar filtros después de las estadísticas
             const statsContainer = document.querySelector('.stats-container');
-            statsContainer.insertAdjacentHTML('afterend', filterHTML);
+            if (statsContainer) {
+                statsContainer.insertAdjacentHTML('afterend', filterHTML);
+            }
             
             // Configurar eventos de los filtros
             document.querySelectorAll('.filter-btn').forEach(btn => {
                 btn.addEventListener('click', function() {
-                    // Remover clase active de todos los botones
                     document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-                    // Agregar clase active al botón clickeado
                     this.classList.add('active');
                     
                     const filter = this.dataset.course;
@@ -1046,52 +990,9 @@ if ($res_estadisticas) {
                         show = true;
                 }
                 
-                if (show) {
-                    delivery.style.display = 'block';
-                    delivery.classList.add('animate__fadeIn');
-                } else {
-                    delivery.style.display = 'none';
-                    delivery.classList.remove('animate__fadeIn');
-                }
+                delivery.style.display = show ? 'block' : 'none';
+                if (show) delivery.classList.add('animate__fadeIn');
             });
-        }
-        
-        // Función para registrar visualización de archivo
-        function trackFileView(entregaId) {
-            // Aquí puedes agregar código para registrar la visualización del archivo
-            console.log(`Archivo de entrega ${entregaId} visualizado`);
-            
-            // Ejemplo: Enviar una petición AJAX para registrar la visualización
-            /*
-            fetch('track_file_view.php', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ entrega_id: entregaId })
-            });
-            */
-        }
-        
-        // Función para marcar como revisado (sin calificar aún)
-        function markAsReviewed(entregaId) {
-            if (confirm('¿Marcar esta entrega como revisada?')) {
-                fetch('mark_reviewed.php', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
-                    body: `id=${entregaId}`
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        showNotification('Entrega marcada como revisada', 'success');
-                        // Ocultar la tarjeta o actualizar su estado
-                        document.querySelector(`[data-id="${entregaId}"]`)?.remove();
-                    }
-                });
-            }
         }
     </script>
 </body>
