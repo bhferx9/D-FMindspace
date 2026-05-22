@@ -746,6 +746,66 @@ footer {
 @media(max-width: 480px) {
     .role-selector { grid-template-columns: 1fr; }
 }
+
+/* ============================================================
+   MODAL DE ÉXITO
+   ============================================================ */
+.success-modal .modal-header-strip {
+    background: linear-gradient(135deg, #2ecc71, #27ae60);
+}
+.success-modal .modal-icon {
+    background: rgba(46,204,113,.2);
+    border-color: rgba(46,204,113,.3);
+}
+.success-modal h3 { 
+    color: #27ae60;
+}
+.success-modal .btn-modal-submit { 
+    background: linear-gradient(90deg, #2ecc71, #27ae60);
+    box-shadow: 0 8px 24px rgba(46,204,113,.35);
+}
+.success-modal .btn-modal-submit:hover {
+    background: linear-gradient(90deg, #27ae60, #229954);
+}
+
+/* ============================================================
+   MODAL DE INFORMACIÓN
+   ============================================================ */
+.info-modal .modal-header-strip {
+    background: linear-gradient(135deg, #3498db, #2980b9);
+}
+.info-modal .modal-icon {
+    background: rgba(52,152,219,.2);
+    border-color: rgba(52,152,219,.3);
+}
+.info-modal h3 { 
+    color: #2980b9;
+}
+.info-modal .btn-modal-submit { 
+    background: linear-gradient(90deg, #3498db, #2980b9);
+    box-shadow: 0 8px 24px rgba(52,152,219,.35);
+}
+.info-modal .btn-modal-submit:hover {
+    background: linear-gradient(90deg, #2980b9, #1f6fa5);
+}
+
+/* Animación de entrada para todos los modales */
+.success-modal .modal-box,
+.info-modal .modal-box,
+.error-modal .modal-box {
+    animation: modalPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes modalPop {
+    from {
+        opacity: 0;
+        transform: scale(0.8) translateY(-50px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
 </style>
 </head>
 <body>
@@ -1106,7 +1166,7 @@ footer {
             <p>Crea tu cuenta y comienza la aventura educativa</p>
         </div>
         <div class="modal-body">
-            <form id="form-register" action="#" method="POST" novalidate>
+            <form id="form-register" action="procesar_registro.php" method="POST" novalidate>
                 <div class="form-row-2">
                     <div class="form-group">
                         <label for="reg-nombre">Nombre completo</label>
@@ -1260,6 +1320,44 @@ footer {
         </div>
         <div class="modal-body">
             <button class="btn-modal-submit" onclick="closeModal('error')">
+                <i class="fas fa-check"></i> Entendido
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================
+     MODAL DE ÉXITO (Verde/Amigable)
+     ============================================================ -->
+<div class="modal-overlay success-modal" id="modal-success">
+    <div class="modal-box">
+        <div class="modal-header-strip">
+            <button class="modal-close" onclick="closeModal('success')" aria-label="Cerrar"><i class="fas fa-times"></i></button>
+            <div class="modal-icon"><i class="fas fa-check-circle"></i></div>
+            <h3 id="success-title">¡Éxito!</h3>
+            <p id="success-message">Operación completada correctamente</p>
+        </div>
+        <div class="modal-body">
+            <button class="btn-modal-submit" onclick="closeModal('success')">
+                <i class="fas fa-check"></i> Continuar
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================
+     MODAL DE INFORMACIÓN (Azul)
+     ============================================================ -->
+<div class="modal-overlay info-modal" id="modal-info">
+    <div class="modal-box">
+        <div class="modal-header-strip">
+            <button class="modal-close" onclick="closeModal('info')" aria-label="Cerrar"><i class="fas fa-times"></i></button>
+            <div class="modal-icon"><i class="fas fa-info-circle"></i></div>
+            <h3 id="info-title">Información</h3>
+            <p id="info-message">Mensaje informativo</p>
+        </div>
+        <div class="modal-body">
+            <button class="btn-modal-submit" onclick="closeModal('info')">
                 <i class="fas fa-check"></i> Entendido
             </button>
         </div>
@@ -1590,10 +1688,37 @@ if (hijoPass) {
     });
 }
 
-document.getElementById('form-register')?.addEventListener('submit', function(e) {
+/* ---- FUNCIONES PARA MODALES DEDICADOS ---- */
+function showSuccessModal(message, title = "¡Éxito!") {
+    document.getElementById('success-title').textContent = title;
+    document.getElementById('success-message').textContent = message;
+    document.getElementById('modal-success').classList.add('open');
+    document.body.style.overflow = 'hidden';
+}
+
+function showInfoModal(message, title = "Información") {
+    document.getElementById('info-title').textContent = title;
+    document.getElementById('info-message').textContent = message;
+    document.getElementById('modal-info').classList.add('open');
+    document.body.style.overflow = 'hidden';
+}
+
+// Mantenemos la función de error original
+function showError(message, title = "Error") {
+    document.getElementById('error-title').textContent = title;
+    document.getElementById('error-message').textContent = message;
+    document.getElementById('modal-error').classList.add('open');
+    document.body.style.overflow = 'hidden';
+}
+
+// Reemplaza COMPLETAMENTE el evento submit del registro con este código
+document.getElementById('form-register')?.addEventListener('submit', async function(e) {
+    e.preventDefault(); // Siempre prevenir el envío tradicional
+    
     let valid = true;
     let errorMsg = '';
 
+    // Validar campos
     Object.entries(regFields).forEach(([id, cfg]) => {
         const el = document.getElementById(id);
         const required = id !== 'reg-telefono';
@@ -1607,14 +1732,18 @@ document.getElementById('form-register')?.addEventListener('submit', function(e)
         }
     });
 
+    // Validar padre si aplica
     if (document.getElementById('reg-tipo').value === 'padre') {
-        if (!hijoEmail.value || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(hijoEmail.value)) {
+        const hijoEmailInput = document.getElementById('hijo-email');
+        const hijoPassInput = document.getElementById('hijo-pass');
+        
+        if (!hijoEmailInput.value || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(hijoEmailInput.value)) {
             markInput('hijo-email', false);
             setFeedback('fb-hijo-email', 'Correo del hijo obligatorio', 'err');
             valid = false;
             errorMsg = errorMsg || 'Debes vincular la cuenta de tu hijo';
         }
-        if (!hijoPass.value) {
+        if (!hijoPassInput.value) {
             markInput('hijo-pass', false);
             setFeedback('fb-hijo-pass', 'Contraseña del hijo obligatoria', 'err');
             valid = false;
@@ -1622,12 +1751,57 @@ document.getElementById('form-register')?.addEventListener('submit', function(e)
         }
     }
 
-    // Solo prevenir si hay error
+    // Si hay errores, mostrar y detener
     if (!valid) {
-        e.preventDefault();
         showError(errorMsg, 'Error en el registro');
+        return;
     }
-    // Si es válido, NO haces nada, el formulario se envía solo
+
+    // Crear FormData con los datos del formulario
+    const formData = new FormData(this);
+    
+    // Mostrar loading en el botón
+    const submitBtn = this.querySelector('.btn-modal-submit');
+    const originalText = submitBtn.innerHTML;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creando cuenta...';
+    submitBtn.disabled = true;
+    
+    try {
+        // Enviar petición AJAX al archivo de registro
+        const response = await fetch('procesar_registro.php', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+if (data.success) {
+    // Usar modal de éxito en lugar de error
+    showSuccessModal(data.message, '¡Bienvenido a D&F Mindspace!');
+    
+    // Limpiar el formulario
+    this.reset();
+    
+    // Cerrar modal de registro y abrir login después de 2 segundos
+    setTimeout(() => {
+        closeModal('register');
+        openModal('login');
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
+        closeModal('success'); // Cerrar modal de éxito
+    }, 2000);
+} else {
+    // Error en el registro
+    showError(data.message, 'Error en el registro');
+    submitBtn.innerHTML = originalText;
+    submitBtn.disabled = false;
+}
+    } catch(error) {
+        console.error('Error:', error);
+        showError('Error al conectar con el servidor. Verifica tu conexión.', 'Error de conexión');
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
+    }
 });
 </script>
 </body>
