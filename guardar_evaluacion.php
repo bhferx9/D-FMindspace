@@ -141,10 +141,7 @@ try {
             }
             // ─────────────────────────────────────────────────────────
             
-            echo "<script>
-                    alert('✅ Tarea calificada exitosamente.\\nProgreso actualizado al " . $nuevo_porcentaje . "%');
-                    window.location='revisar_entregas.php';
-                  </script>";
+            header("Location: revisar_entregas.php?success=1&puntos=" . $calificacion . "&max=" . $puntos_maximos . "&progreso=" . $nuevo_porcentaje);
             exit();
         }
     }

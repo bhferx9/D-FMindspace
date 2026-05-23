@@ -8,7 +8,7 @@ if (defined('CONFIG_POSTGRES_CARGADO')) {
 }
 define('CONFIG_POSTGRES_CARGADO', true);
 
-$host = '172.16.27.151';
+$host = '192.168.0.27';
 $port = '5432';
 $dbname = 'df_mindspace';
 $user = 'admin_user';

@@ -669,6 +669,18 @@ function getActividadIcono($tipo) {
                 justify-content: center;
             }
         }
+        .modal-content {
+            border-radius: 25px;
+        }
+
+        .modal-header {
+            border-bottom: none;
+        }
+
+        .modal-footer {
+            border-top: none;
+        }
+
     </style>
 </head>
 <body>
@@ -862,7 +874,100 @@ function getActividadIcono($tipo) {
             </div>
         <?php endif; ?>
     </div>
+
+    <!-- Modal de éxito -->
+<div class="modal fade" id="successModal" tabindex="-1" aria-labelledby="successModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border-radius: 25px; overflow: hidden;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #83bf46, #6aab39); border: none;">
+                <h5 class="modal-title text-white fw-bold" id="successModalLabel">
+                    <i class="fas fa-check-circle me-2"></i>¡Calificación Enviada!
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center py-4">
+                <div class="mb-3">
+                    <i class="fas fa-trophy" style="font-size: 4rem; color: #f0ae2a;"></i>
+                </div>
+                <h4 class="fw-bold">¡Excelente trabajo!</h4>
+                <p>Has calificado la tarea del alumno correctamente.</p>
+                <div class="alert alert-success rounded-3 d-inline-block">
+                    <strong>Puntuación:</strong> <span id="modalPuntos"></span> / <span id="modalMax"></span> puntos
+                </div>
+                <div class="mt-2">
+                    <span class="badge bg-info fs-6">Progreso actualizado: <span id="modalProgreso"></span>%</span>
+                </div>
+            </div>
+            <div class="modal-footer justify-content-center" style="background: #f8f9fa;">
+                <button type="button" class="btn btn-success px-4" data-bs-dismiss="modal">
+                    <i class="fas fa-check me-2"></i>Continuar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Contenedor de notificaciones Toast -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 11">
+    <div id="successToast" class="toast align-items-center text-white bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true" data-bs-autohide="true" data-bs-delay="5000">
+        <div class="d-flex">
+            <div class="toast-body">
+                <i class="fas fa-check-circle me-2"></i>
+                <span id="toastMessage">¡Tarea calificada exitosamente!</span>
+                <br>
+                <small id="toastDetails"></small>
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
     
+<!-- Modal de éxito -->
+<div class="modal fade" id="successModal" tabindex="-1" aria-labelledby="successModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border-radius: 25px; overflow: hidden;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #83bf46, #6aab39); border: none;">
+                <h5 class="modal-title text-white fw-bold" id="successModalLabel">
+                    <i class="fas fa-check-circle me-2"></i>¡Calificación Enviada!
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center py-4">
+                <div class="mb-3">
+                    <i class="fas fa-trophy" style="font-size: 4rem; color: #f0ae2a;"></i>
+                </div>
+                <h4 class="fw-bold">¡Excelente trabajo!</h4>
+                <p>Has calificado la tarea del alumno correctamente.</p>
+                <div class="alert alert-success rounded-3 d-inline-block">
+                    <strong>Puntuación:</strong> <span id="modalPuntos"></span> / <span id="modalMax"></span> puntos
+                </div>
+                <div class="mt-2">
+                    <span class="badge bg-info fs-6">Progreso actualizado: <span id="modalProgreso"></span>%</span>
+                </div>
+            </div>
+            <div class="modal-footer justify-content-center" style="background: #f8f9fa;">
+                <button type="button" class="btn btn-success px-4" data-bs-dismiss="modal">
+                    <i class="fas fa-check me-2"></i>Continuar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast de notificación -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 11">
+    <div id="successToast" class="toast align-items-center text-white bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true" data-bs-autohide="true" data-bs-delay="5000">
+        <div class="d-flex">
+            <div class="toast-body">
+                <i class="fas fa-check-circle me-2"></i>
+                <span id="toastMessage">¡Tarea calificada exitosamente!</span>
+                <br>
+                <small id="toastDetails"></small>
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         // Crear partículas flotantes
@@ -994,6 +1099,46 @@ function getActividadIcono($tipo) {
                 if (show) delivery.classList.add('animate__fadeIn');
             });
         }
+
+        // Verificar si hay parámetro de éxito en la URL
+function checkSuccessMessage() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const success = urlParams.get('success');
+    const puntos = urlParams.get('puntos');
+    const maxPuntos = urlParams.get('max');
+    const progreso = urlParams.get('progreso');
+    
+    if (success == '1') {
+        // Actualizar modal con los valores
+        document.getElementById('modalPuntos').textContent = puntos;
+        document.getElementById('modalMax').textContent = maxPuntos;
+        document.getElementById('modalProgreso').textContent = progreso;
+        
+        // Mostrar modal
+        const modal = new bootstrap.Modal(document.getElementById('successModal'));
+        modal.show();
+        
+        // También mostrar toast como respaldo
+        const toastElement = document.getElementById('successToast');
+        const toastMessage = document.getElementById('toastMessage');
+        const toastDetails = document.getElementById('toastDetails');
+        toastMessage.innerHTML = '<i class="fas fa-check-circle me-2"></i>¡Tarea calificada exitosamente!';
+        toastDetails.innerHTML = `Puntuación: ${puntos}/${maxPuntos} puntos | Progreso: ${progreso}%`;
+        
+        const toast = new bootstrap.Toast(toastElement, { delay: 5000 });
+        toast.show();
+        
+        // Limpiar URL sin recargar la página
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
+}
+
+// Ejecutar al cargar la página
+document.addEventListener('DOMContentLoaded', function() {
+    // ... tu código existente ...
+    checkSuccessMessage();
+});
+
     </script>
 </body>
 </html>

@@ -169,6 +169,27 @@ try {
     $proximas_actividades = [];
 }
 
+// =============================================
+// OBTENER ACTIVIDADES PARA EL SIDEBAR
+// =============================================
+$actividades_data = [];
+try {
+    $stmt_actividades = $conn->pdo->prepare("
+        SELECT a.id, a.titulo, a.fecha_limite, 
+               e.id as entrega_id, e.estado as estado_entrega
+        FROM actividades a
+        JOIN cursos c ON a.id_curso = c.id
+        JOIN inscripciones i ON c.id = i.id_curso
+        LEFT JOIN entregas e ON a.id = e.id_actividad AND e.id_alumno = :alumno_id
+        WHERE i.id_alumno = :alumno_id AND i.estado = 'activo'
+        ORDER BY a.fecha_limite ASC
+    ");
+    $stmt_actividades->execute([':alumno_id' => $alumno_id]);
+    $actividades_data = $stmt_actividades->fetchAll(PDO::FETCH_ASSOC);
+} catch(PDOException $e) {
+    $actividades_data = [];
+}
+
 // Avatares disponibles
 // Obtener avatar del alumno - ARREGLO COMPLETO
 $avatares = [
@@ -316,11 +337,15 @@ $avatar_color = $avatares[$avatar_key]['color'];
         }
         
         .logo-sub {
-            font-family: 'Fredoka One', cursive;
-            font-size: 1.1rem;
-            color: var(--accent);
-            font-weight: 600;
-        }
+        font-family: 'Poppins', sans-serif;
+        font-size: 1.2rem;
+        color: var(--primary);
+        font-weight: 600;
+        letter-spacing: 8px;
+        text-transform: uppercase;
+        margin-left: 10px;
+        position: relative;
+    }
         
         /* Avatar del niño */
         .kid-avatar {
@@ -992,19 +1017,29 @@ $avatar_color = $avatares[$avatar_key]['color'];
         <div class="sidebar-content">
             <div class="sidebar-brand">
                 <div class="logo-container">
-                    <div class="logo-main">D&F</div>
-                    <div class="logo-sub">Aventuras de Aprendizaje</div>
+                <div class="logo-main">D&F</div>
+                <div class="logo-sub">mindspace</div>
+                <div class="tagline">
+                    <span>EXPLORA</span> • <span>CREA</span> • <span>APRENDE</span>
                 </div>
+            </div>
                 
                 <!-- Avatar del niño -->
                 <div class="kid-avatar" id="kidAvatar">
                     <span class="avatar-emoji"><?php echo $avatar_emoji; ?></span>
+                    <div class="avatar-status"></div>
                 </div>
                 
-                <h4 class="kid-name"><?php echo htmlspecialchars($nombre_alumno); ?></h4>
+                <h4 class="kid-name"><?php echo $nombre_alumno; ?></h4>
                 <span class="kid-level">
-                    <i class="fas fa-star me-1"></i>Explorador
+                    <i class="fas fa-star me-1"></i>Nivel <?php echo $avatares[$avatar_key]['nivel']; ?>
                 </span>
+                
+                <!-- Puntos -->
+                <!-- <div class="points-container" style="text-align: center; padding: 15px; background: linear-gradient(135deg, rgba(255, 107, 139, 0.1), rgba(255, 107, 139, 0.05)); border-radius: 15px; margin: 15px;">
+                    <div class="points-value" style="font-size: 2rem; font-family: 'Fredoka One', cursive; color: var(--danger); margin: 5px 0;"><?php echo $puntos_alumno; ?></div>
+                    <div class="points-label" style="color: #666; font-size: 0.9rem;">Puntos de Aventura</div>
+                </div> -->
             </div>
             
             <!-- Navegación -->
@@ -1019,10 +1054,11 @@ $avatar_color = $avatares[$avatar_key]['color'];
                     <a href="mis_cursos.php" class="nav-link active">
                         <i class="fas fa-compass"></i>
                         <span>Mis Aventuras</span>
+                        <!-- NOTIFICACIÓN ELIMINADA - No debe mostrar número -->
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a href="catalogo.php" class="nav-link">
+                    <a href="catalogo.php" class="nav-link ">
                         <i class="fas fa-search"></i>
                         <span>Nuevas Aventuras</span>
                     </a>
@@ -1031,12 +1067,37 @@ $avatar_color = $avatares[$avatar_key]['color'];
                     <a href="mis_actividades.php" class="nav-link">
                         <i class="fas fa-tasks"></i>
                         <span>Mis Misiones</span>
+                        <?php 
+                        // Calcular misiones PENDIENTES para el ALUMNO
+                        // Pendiente = NO ha entregado Y NO está vencida
+                        $misiones_pendientes = 0;
+                        foreach($actividades_data as $act) {
+                            // Verificar si está vencida
+                            $fecha_limite = strtotime($act['fecha_limite']);
+                            $hoy = time();
+                            $tiene_fecha_limite = $act['fecha_limite'] && !empty($act['fecha_limite']);
+                            
+                            // Está vencida si: tiene fecha, la fecha pasó, y NO ha entregado
+                            $vencida = $tiene_fecha_limite && $hoy > $fecha_limite && !$act['entrega_id'];
+                            
+                            // Para el alumno, una misión está PENDIENTE solo si:
+                            // NO ha entregado Y NO está vencida
+                            $es_pendiente = (!$act['entrega_id'] && !$vencida);
+                            
+                            if ($es_pendiente) {
+                                $misiones_pendientes++;
+                            }
+                        }
+                        ?>
+                        <?php if($misiones_pendientes > 0): ?>
+                            <span class="badge-notification ms-auto"><?php echo $misiones_pendientes; ?></span>
+                        <?php endif; ?>
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a href="mis_logros.php" class="nav-link">
-                        <i class="fas fa-trophy"></i>
-                        <span>Mis Logros</span>
+                    <a href="avatar_shop.php" class="nav-link">
+                        <i class="fas fa-user-astronaut"></i>
+                        <span>Tienda de Avatares</span>
                     </a>
                 </li>
             </ul>
@@ -1219,149 +1280,162 @@ $avatar_color = $avatares[$avatar_key]['color'];
         </div>
         
         <!-- Actividades del curso -->
-        <div class="activities-section fade-in-up" style="animation-delay: 0.4s">
-            <h3 class="section-title">
-                <i class="fas fa-tasks"></i> Mis Misiones en esta Aventura
-            </h3>
-            
-            <?php if($total_actividades > 0): ?>
-                <div class="table-responsive">
-                    <table class="activities-table">
-                        <thead>
-                            <tr>
-                                <th>Misión</th>
-                                <th>Tipo</th>
-                                <th>Fecha Límite</th>
-                                <th>Estado</th>
-                                <th>Calificación</th>
-                                <th>Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php mysqli_data_seek($res_actividades, 0); ?>
-                            <?php while($actividad = mysqli_fetch_assoc($res_actividades)): 
-                                // Obtener estado de la actividad para este alumno
-                                $sql_estado = "SELECT e.estado, ev.calificacion 
-                                              FROM entregas e 
-                                              LEFT JOIN evaluaciones ev ON e.id = ev.id_entrega 
-                                              WHERE e.id_actividad = '" . $actividad['id'] . "' 
-                                              AND e.id_alumno = '$alumno_id' 
-                                              ORDER BY e.fecha_entrega DESC 
-                                              LIMIT 1";
-                                $res_estado = mysqli_query($conn, $sql_estado);
-                                $estado_data = mysqli_fetch_assoc($res_estado);
-                                
+<!-- Actividades del curso -->
+<div class="activities-section fade-in-up" style="animation-delay: 0.4s">
+    <h3 class="section-title">
+        <i class="fas fa-tasks"></i> Mis Misiones en esta Aventura
+    </h3>
+    
+    <?php if($total_actividades > 0): ?>
+        <div class="table-responsive">
+            <table class="activities-table">
+                <thead>
+                    <tr>
+                        <th>Misión</th>
+                        <th>Tipo</th>
+                        <th>Fecha Límite</th>
+                        <th>Estado</th>
+                        <th>Calificación</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach($actividades as $actividad): 
+                        // Obtener estado de la actividad para este alumno usando PDO
+                        $estado = 'pendiente';
+                        $calificacion = null;
+                        
+                        try {
+                            $sql_estado = "SELECT e.estado, ev.calificacion 
+                                          FROM entregas e 
+                                          LEFT JOIN evaluaciones ev ON e.id = ev.id_entrega 
+                                          WHERE e.id_actividad = :id_actividad 
+                                          AND e.id_alumno = :alumno_id 
+                                          ORDER BY e.fecha_entrega DESC 
+                                          LIMIT 1";
+                            $stmt_estado = $conn->pdo->prepare($sql_estado);
+                            $stmt_estado->execute([
+                                ':id_actividad' => $actividad['id'],
+                                ':alumno_id' => $alumno_id
+                            ]);
+                            $estado_data = $stmt_estado->fetch(PDO::FETCH_ASSOC);
+                            
+                            if ($estado_data) {
                                 $estado = $estado_data['estado'] ?? 'pendiente';
                                 $calificacion = $estado_data['calificacion'] ?? null;
-                                
-                                // Determinar clase de estado
-                                $estado_class = '';
-                                switch($estado) {
-                                    case 'calificado': $estado_class = 'status-completed'; break;
-                                    case 'pendiente': $estado_class = 'status-pending'; break;
-                                    default: $estado_class = 'status-missing';
-                                }
-                                
-                                // Determinar clase de calificación
-                                $grade_class = '';
-                                if($calificacion !== null) {
-                                    if($calificacion >= 9) $grade_class = 'grade-excellent';
-                                    elseif($calificacion >= 7) $grade_class = 'grade-good';
-                                    elseif($calificacion >= 5) $grade_class = 'grade-average';
-                                    else $grade_class = 'grade-poor';
-                                }
-                                
-                                // Determinar indicador de tiempo
-                                $fecha_limite = strtotime($actividad['fecha_limite']);
-                                $dias_restantes = floor(($fecha_limite - time()) / (60 * 60 * 24));
-                                
-                                $time_class = '';
-                                if($dias_restantes < 0) {
-                                    $time_text = 'Vencida';
-                                    $time_class = 'time-urgent';
-                                } elseif($dias_restantes < 3) {
-                                    $time_text = '¡Pronto!';
-                                    $time_class = 'time-urgent';
-                                } elseif($dias_restantes < 7) {
-                                    $time_text = 'Esta semana';
-                                    $time_class = 'time-warning';
-                                } else {
-                                    $time_text = 'Tiempo suficiente';
-                                    $time_class = 'time-normal';
-                                }
+                            }
+                        } catch(PDOException $e) {
+                            $estado = 'pendiente';
+                            $calificacion = null;
+                        }
+                        
+                        // Determinar clase de estado
+                        $estado_class = '';
+                        switch($estado) {
+                            case 'calificado': $estado_class = 'status-completed'; break;
+                            case 'pendiente': $estado_class = 'status-pending'; break;
+                            default: $estado_class = 'status-missing';
+                        }
+                        
+                        // Determinar clase de calificación
+                        $grade_class = '';
+                        if($calificacion !== null) {
+                            if($calificacion >= 9) $grade_class = 'grade-excellent';
+                            elseif($calificacion >= 7) $grade_class = 'grade-good';
+                            elseif($calificacion >= 5) $grade_class = 'grade-average';
+                            else $grade_class = 'grade-poor';
+                        }
+                        
+                        // Determinar indicador de tiempo
+                        $fecha_limite = strtotime($actividad['fecha_limite']);
+                        $dias_restantes = floor(($fecha_limite - time()) / (60 * 60 * 24));
+                        
+                        $time_class = '';
+                        if($dias_restantes < 0) {
+                            $time_text = 'Vencida';
+                            $time_class = 'time-urgent';
+                        } elseif($dias_restantes < 3) {
+                            $time_text = '¡Pronto!';
+                            $time_class = 'time-urgent';
+                        } elseif($dias_restantes < 7) {
+                            $time_text = 'Esta semana';
+                            $time_class = 'time-warning';
+                        } else {
+                            $time_text = 'Tiempo suficiente';
+                            $time_class = 'time-normal';
+                        }
+                    ?>
+                    <tr>
+                        <td>
+                            <strong><?php echo htmlspecialchars($actividad['titulo']); ?></strong><br>
+                            <small class="text-muted"><?php echo htmlspecialchars(substr($actividad['descripcion'] ?? '', 0, 60)) . (strlen($actividad['descripcion'] ?? '') > 60 ? '...' : ''); ?></small>
+                        </td>
+                        <td>
+                            <?php 
+                            $tipo_icon = '';
+                            switch(strtolower($actividad['tipo'] ?? 'tarea')) {
+                                case 'quiz': $tipo_icon = 'fa-puzzle-piece'; break;
+                                case 'tarea': $tipo_icon = 'fa-tasks'; break;
+                                case 'examen': $tipo_icon = 'fa-file-alt'; break;
+                                default: $tipo_icon = 'fa-star';
+                            }
                             ?>
-                            <tr>
-                                <td>
-                                    <strong><?php echo htmlspecialchars($actividad['titulo']); ?></strong><br>
-                                    <small class="text-muted"><?php echo htmlspecialchars(substr($actividad['descripcion'], 0, 60)) . (strlen($actividad['descripcion']) > 60 ? '...' : ''); ?></small>
-                                </td>
-                                <td>
-                                    <?php 
-                                    $tipo_icon = '';
-                                    switch(strtolower($actividad['tipo'])) {
-                                        case 'quiz': $tipo_icon = 'fa-puzzle-piece'; break;
-                                        case 'tarea': $tipo_icon = 'fa-tasks'; break;
-                                        case 'examen': $tipo_icon = 'fa-file-alt'; break;
-                                        default: $tipo_icon = 'fa-star';
+                            <i class="fas <?php echo $tipo_icon; ?> me-1"></i>
+                            <?php echo htmlspecialchars($actividad['tipo'] ?? 'Tarea'); ?>
+                        </td>
+                        <td>
+                            <div class="<?php echo $time_class; ?> time-indicator">
+                                <i class="fas fa-calendar"></i>
+                                <?php echo date('d/m/Y', strtotime($actividad['fecha_limite'])); ?>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="activity-status <?php echo $estado_class; ?>">
+                                <i class="fas fa-<?php 
+                                    switch($estado) {
+                                        case 'calificado': echo 'check-circle'; break;
+                                        case 'pendiente': echo 'clock'; break;
+                                        default: echo 'exclamation-triangle';
                                     }
-                                    ?>
-                                    <i class="fas <?php echo $tipo_icon; ?> me-1"></i>
-                                    <?php echo htmlspecialchars($actividad['tipo']); ?>
-                                </td>
-                                <td>
-                                    <div class="<?php echo $time_class; ?> time-indicator">
-                                        <i class="fas fa-calendar"></i>
-                                        <?php echo date('d/m/Y', strtotime($actividad['fecha_limite'])); ?>
-                                    </div>
-                                </td>
-                                <td>
-                                    <span class="activity-status <?php echo $estado_class; ?>">
-                                        <i class="fas fa-<?php 
-                                            switch($estado) {
-                                                case 'calificado': echo 'check-circle'; break;
-                                                case 'pendiente': echo 'clock'; break;
-                                                default: echo 'exclamation-triangle';
-                                            }
-                                        ?> me-1"></i>
-                                        <?php echo ucfirst($estado); ?>
-                                    </span>
-                                </td>
-                                <td>
-                                    <?php if($calificacion !== null): ?>
-                                        <span class="grade-badge <?php echo $grade_class; ?>">
-                                            <?php echo $calificacion; ?>/10
-                                        </span>
-                                    <?php else: ?>
-                                        <span class="text-muted">-</span>
-                                    <?php endif; ?>
-                                </td>
-                                <td>
-                                    <?php if($estado == 'calificado'): ?>
-                                        <a href="entrega.php?id_actividad=<?php echo $actividad['id']; ?>&id_alumno=<?php echo $alumno_id; ?>" 
-                                           class="btn btn-sm btn-outline-primary">
-                                            <i class="fas fa-eye me-1"></i> Ver
-                                        </a>
-                                    <?php else: ?>
-                                        <a href="realizar_actividad.php?id=<?php echo $actividad['id']; ?>" 
-                                           class="btn btn-sm btn-primary">
-                                            <i class="fas fa-play me-1"></i> Realizar
-                                        </a>
-                                    <?php endif; ?>
-                                </td>
-                            </tr>
-                            <?php endwhile; ?>
-                        </tbody>
-                    </table>
-                </div>
-            <?php else: ?>
-                <div class="text-center py-5">
-                    <i class="fas fa-tasks fa-4x text-muted mb-3 opacity-50"></i>
-                    <h5 class="text-muted mb-3">No hay misiones asignadas en este curso</h5>
-                    <p class="text-muted">Tu tutor aún no ha publicado misiones para esta aventura.</p>
-                </div>
-            <?php endif; ?>
+                                ?> me-1"></i>
+                                <?php echo ucfirst($estado); ?>
+                            </span>
+                        </td>
+                        <td>
+                            <?php if($calificacion !== null): ?>
+                                <span class="grade-badge <?php echo $grade_class; ?>">
+                                    <?php echo $calificacion; ?>/10
+                                </span>
+                            <?php else: ?>
+                                <span class="text-muted">-</span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <?php if($estado == 'calificado'): ?>
+                                <a href="ver_entrega.php?id=<?php echo $actividad['id']; ?>" 
+                                   class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-eye me-1"></i> Ver
+                                </a>
+                            <?php else: ?>
+                                <a href="realizar_actividad.php?id=<?php echo $actividad['id']; ?>" 
+                                   class="btn btn-sm btn-primary">
+                                    <i class="fas fa-play me-1"></i> Realizar
+                                </a>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
         </div>
-        
+    <?php else: ?>
+        <div class="text-center py-5">
+            <i class="fas fa-tasks fa-4x text-muted mb-3 opacity-50"></i>
+            <h5 class="text-muted mb-3">No hay misiones asignadas en este curso</h5>
+            <p class="text-muted">Tu tutor aún no ha publicado misiones para esta aventura.</p>
+        </div>
+    <?php endif; ?>
+</div>
         <!-- Acciones principales -->
         <div class="action-buttons fade-in-up" style="animation-delay: 0.5s">
             <a href="ver_curso.php?id=<?php echo $curso_id; ?>" class="btn-action btn-primary-action">

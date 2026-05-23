@@ -11,6 +11,37 @@ if (!isset($_SESSION['user_id']) || $_SESSION['tipo'] != 'alumno') {
 $alumno_id = $_SESSION['user_id'];
 $nombre_alumno = $_SESSION['nombre'];
 
+// =============================================
+// OBTENER PUNTOS DEL ALUMNO
+// =============================================
+$puntos_alumno = 0;
+
+try {
+    // Calcular puntos totales del alumno (suma de calificaciones convertidas a puntos)
+    // Opción 1: Si los puntos están en la tabla usuarios
+    $stmt_puntos = $conn->pdo->prepare("SELECT puntos FROM usuarios WHERE id = :alumno_id");
+    $stmt_puntos->execute([':alumno_id' => $alumno_id]);
+    $puntos_data = $stmt_puntos->fetch(PDO::FETCH_ASSOC);
+    
+    if ($puntos_data && isset($puntos_data['puntos'])) {
+        $puntos_alumno = (int)$puntos_data['puntos'];
+    } else {
+        // Opción 2: Calcular puntos desde las evaluaciones
+        $stmt_puntos = $conn->pdo->prepare("
+            SELECT COALESCE(SUM(ev.calificacion * a.puntos / 10), 0) as total_puntos
+            FROM entregas e
+            JOIN evaluaciones ev ON e.id = ev.id_entrega
+            JOIN actividades a ON e.id_actividad = a.id
+            WHERE e.id_alumno = :alumno_id
+        ");
+        $stmt_puntos->execute([':alumno_id' => $alumno_id]);
+        $puntos_data = $stmt_puntos->fetch(PDO::FETCH_ASSOC);
+        $puntos_alumno = (int)($puntos_data['total_puntos'] ?? 0);
+    }
+} catch(PDOException $e) {
+    $puntos_alumno = 0;
+}
+
 // ========== CÓDIGO DE VINCULACIÓN PARA PADRES ==========
 $codigo_actual = '';
 try {
@@ -105,7 +136,6 @@ try {
 // CORREGIDO: Verificar si la tabla alumnos existe, sino usar tabla usuarios
 // Primero verificamos si existe la tabla alumnos
 
-$puntos_alumno = 0;
 
 // if(mysqli_num_rows($check_table) > 0) {
 //     // La tabla alumnos existe
@@ -1086,9 +1116,14 @@ if (!$res_cursos) {
                 </div>
                 
                 <h4 class="kid-name"><?php echo $nombre_alumno; ?></h4>
-                <span class="kid-level">
-                    <i class="fas fa-star me-1"></i>Nivel <?php echo $avatares[$avatar_key]['nivel']; ?>
-                </span>
+<div class="d-flex justify-content-center gap-3 mt-2 flex-wrap">
+    <span class="kid-level">
+        <i class="fas fa-star me-1"></i>Nivel <?php echo $avatares[$avatar_key]['nivel']; ?>
+    </span>
+    <span class="kid-level" style="background: linear-gradient(135deg, #f0ae2a, #fdcc5c);">
+        <i class="fas fa-coins me-1"></i><?php echo number_format($puntos_alumno); ?> pts
+    </span>
+</div>
                 <!-- CÓDIGO DE VINCULACIÓN (LLAMATIVO) -->
 <div class="codigo-box mt-3 p-2 text-center" style="background: linear-gradient(135deg, #f0ae2a, #fdcc5c); border-radius: 18px; margin: 0 10px 10px 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
     <small class="text-white fw-bold"><i class="fas fa-link"></i> Código para tus padres</small>
@@ -1212,9 +1247,10 @@ function copiarCodigoSidebar() {
                             <i class="fas fa-gem"></i>
                             <span>Nivel <?php echo $avatares[$avatar_key]['nivel']; ?></span>
                         </div>
+                       <!-- En el banner de bienvenida (línea ~1200) -->
                         <div class="banner-stat">
                             <i class="fas fa-coins"></i>
-                            <span><?php echo $puntos_alumno; ?> Puntos</span>
+                            <span><?php echo number_format($puntos_alumno); ?> Puntos</span>
                         </div>
                     </div>
                 </div>
@@ -1257,7 +1293,7 @@ function copiarCodigoSidebar() {
                     <i class="fas fa-trophy"></i>
                 </div>
                 <div class="stat-value">
-                    <?php echo $puntos_alumno; ?>
+                    <?php echo number_format($puntos_alumno); ?>
                 </div>
                 <div class="stat-label">Puntos Totales</div>
             </div>
