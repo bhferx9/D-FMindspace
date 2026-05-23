@@ -43,7 +43,7 @@ try {
         $id_curso = $entrega['id_curso'];
         $id_alumno = $entrega['id_alumno'];
         
-        // Validar calificación
+        // Validar calificació
         if ($calificacion < 0 || $calificacion > $puntos_maximos) {
             $errores[] = "La calificación debe estar entre 0 y " . $puntos_maximos . " puntos.";
         }

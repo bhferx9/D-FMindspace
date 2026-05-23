@@ -1054,7 +1054,7 @@ $avatar_color = $avatares[$avatar_key]['color'];
                     <a href="mis_cursos.php" class="nav-link active">
                         <i class="fas fa-compass"></i>
                         <span>Mis Aventuras</span>
-                        <!-- NOTIFICACIÓN ELIMINADA - No debe mostrar número -->
+                        <!-- NOTIFICACIÓN ELIMINAD - No debe mostrar número -->
                     </a>
                 </li>
                 <li class="nav-item">

@@ -954,7 +954,7 @@ function getActividadIcono($tipo) {
     </div>
 </div>
 
-<!-- Toast de notificación -->
+<!-- Toast de notificació -->
 <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 11">
     <div id="successToast" class="toast align-items-center text-white bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true" data-bs-autohide="true" data-bs-delay="5000">
         <div class="d-flex">
